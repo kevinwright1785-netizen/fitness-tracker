@@ -1,49 +1,170 @@
-import { Card } from "./Card";
+"use client";
 
-export function FoodLogSection() {
+import { useState, FormEvent } from "react";
+import { Card } from "./Card";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "./AuthContext";
+
+type Mode = "search" | "barcode" | "manual";
+
+type Props = {
+  onLogged?: () => void;
+};
+
+export function FoodLogSection({ onLogged }: Props) {
+  const { user } = useAuth();
+  const [mode, setMode] = useState<Mode>("manual");
+  const [name, setName] = useState("");
+  const [calories, setCalories] = useState("");
+  const [protein, setProtein] = useState("");
+  const [carbs, setCarbs] = useState("");
+  const [fat, setFat] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!user || !supabase) return;
+    setError(null);
+    if (!name.trim()) {
+      setError("Food name is required.");
+      return;
+    }
+    if (!calories) {
+      setError("Calories is required.");
+      return;
+    }
+    setSaving(true);
+
+    const payload = {
+      user_id: user.id,
+      food_name: name.trim(),
+      calories: Number(calories),
+      protein: protein ? Number(protein) : null,
+      carbs: carbs ? Number(carbs) : null,
+      fat: fat ? Number(fat) : null,
+      serving_size: null,
+      serving_qty: null,
+      source: mode,
+      logged_at: new Date().toISOString()
+    };
+
+    console.log("[FoodLog] Saving food payload", payload);
+    const { error } = await supabase.from("food_logs").insert(payload);
+    if (error) {
+      console.error("[FoodLog] Error saving food", error);
+      setError(error.message);
+    } else {
+      console.log("[FoodLog] Saved food successfully");
+      setName("");
+      setCalories("");
+      setProtein("");
+      setCarbs("");
+      setFat("");
+      onLogged?.();
+    }
+    setSaving(false);
+  }
+
   return (
     <Card title="Food log">
-      <form className="space-y-2">
-        <div className="flex gap-2">
+      <div className="mb-2 flex gap-1 text-[11px]">
+        <button
+          type="button"
+          onClick={() => setMode("search")}
+          className={`flex-1 rounded-2xl px-3 py-1 ${
+            mode === "search"
+              ? "bg-emerald-500 text-slate-950 font-semibold"
+              : "bg-slate-900 text-slate-300"
+          }`}
+        >
+          Search
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("barcode")}
+          className={`flex-1 rounded-2xl px-3 py-1 ${
+            mode === "barcode"
+              ? "bg-emerald-500 text-slate-950 font-semibold"
+              : "bg-slate-900 text-slate-300"
+          }`}
+        >
+          Barcode
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("manual")}
+          className={`flex-1 rounded-2xl px-3 py-1 ${
+            mode === "manual"
+              ? "bg-emerald-500 text-slate-950 font-semibold"
+              : "bg-slate-900 text-slate-300"
+          }`}
+        >
+          Manual
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-2">
+        <input
+          type="text"
+          required
+          placeholder={
+            mode === "manual"
+              ? "Food name"
+              : "Food name or scan result"
+          }
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        />
+        <div className="grid grid-cols-4 gap-2">
           <input
-            type="text"
-            placeholder="Food (e.g. Chicken breast)"
-            className="flex-1 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            type="number"
+            inputMode="decimal"
+            required
+            placeholder="Calories"
+            value={calories}
+            onChange={(e) => setCalories(e.target.value)}
+            className="rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-center text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
-        </div>
-        <div className="grid grid-cols-3 gap-2">
           <input
             type="number"
             inputMode="decimal"
             placeholder="Protein"
+            value={protein}
+            onChange={(e) => setProtein(e.target.value)}
             className="rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-center text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
           <input
             type="number"
             inputMode="decimal"
             placeholder="Carbs"
+            value={carbs}
+            onChange={(e) => setCarbs(e.target.value)}
             className="rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-center text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
           <input
             type="number"
             inputMode="decimal"
-            placeholder="Fats"
+            placeholder="Fat"
+            value={fat}
+            onChange={(e) => setFat(e.target.value)}
             className="rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-center text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
         </div>
+        {error && <p className="text-xs text-rose-400">{error}</p>}
         <button
-          type="button"
-          className="mt-1 w-full rounded-2xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm hover:bg-emerald-400 active:bg-emerald-500"
+          type="submit"
+          disabled={saving || !user}
+          className="mt-1 w-full rounded-2xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm hover:bg-emerald-400 disabled:opacity-60"
         >
-          Add food
+          {saving ? "Saving..." : "Add food"}
         </button>
       </form>
-
-      <div className="mt-3 max-h-40 space-y-1 overflow-y-auto text-xs">
-        <p className="text-slate-500">
-          Your recent foods will appear here once Supabase is wired up.
-        </p>
-      </div>
+      <p className="mt-2 text-[11px] text-slate-500">
+        All three options save here; search and barcode modes can pre-fill these
+        fields once you connect the external APIs.
+      </p>
     </Card>
   );
 }
