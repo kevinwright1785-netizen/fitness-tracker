@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import confetti from "canvas-confetti";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./AuthContext";
 
@@ -14,7 +15,7 @@ type Profile = {
   daily_fat: number | null;
   current_weight: number | null;
   streak_count: number | null;
-  last_completed_date: string | null;
+  last_streak_date: string | null;
 };
 
 type Totals = { calories: number; protein: number; carbs: number; fat: number };
@@ -35,6 +36,12 @@ function todayISO() {
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function yesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function todayRange() {
@@ -143,37 +150,37 @@ function CalorieRing({
 // ─── Fireworks animation ──────────────────────────────────────────────────────
 
 function Fireworks() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-      {Array.from({ length: 20 }).map((_, i) => (
-        <span
-          key={i}
-          className="firework-particle"
-          style={{
-            left: `${10 + Math.random() * 80}%`,
-            top: `${5 + Math.random() * 60}%`,
-            animationDelay: `${Math.random() * 1.2}s`,
-            backgroundColor: ["#10b981", "#f59e0b", "#38bdf8", "#f472b6", "#a78bfa"][i % 5],
-          }}
-        />
-      ))}
-      <style>{`
-        .firework-particle {
-          position: absolute;
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          opacity: 0;
-          animation: burst 1.4s ease-out forwards;
-        }
-        @keyframes burst {
-          0%   { transform: scale(0) translateY(0);  opacity: 1; }
-          60%  { transform: scale(1.6) translateY(-40px); opacity: 0.9; }
-          100% { transform: scale(0.4) translateY(-70px); opacity: 0; }
-        }
-      `}</style>
-    </div>
-  );
+  useEffect(() => {
+    const colors = ["#10b981", "#f59e0b", "#38bdf8", "#f472b6", "#a78bfa", "#ffffff"];
+
+    function fire(x: number, y: number) {
+      confetti({
+        particleCount: 60,
+        spread: 70,
+        origin: { x, y },
+        colors,
+        startVelocity: 28,
+        gravity: 0.9,
+        ticks: 180,
+      });
+    }
+
+    // Three bursts staggered over ~2 seconds
+    fire(0.3, 0.5);
+    const t1 = setTimeout(() => fire(0.7, 0.4), 400);
+    const t2 = setTimeout(() => fire(0.5, 0.55), 800);
+    const t3 = setTimeout(() => fire(0.25, 0.35), 1200);
+    const t4 = setTimeout(() => fire(0.75, 0.5), 1600);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+    };
+  }, []);
+
+  return null;
 }
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
@@ -212,7 +219,7 @@ export function Dashboard() {
       const { start, end } = todayRange();
 
       // Fetch core profile fields and the other data sources in parallel.
-      // streak_count / last_completed_date are fetched separately because
+      // streak_count / last_streak_date are fetched separately because
       // they require a migration; if they don't exist yet the query will
       // error and we fall back to defaults rather than losing all profile data.
       const [profileRes, streakRes, foodRes, weightRes, stepsRes] = await Promise.all([
@@ -225,7 +232,7 @@ export function Dashboard() {
           .maybeSingle(),
         supabase
           .from("profiles")
-          .select("streak_count, last_completed_date")
+          .select("streak_count, last_streak_date")
           .eq("id", user.id)
           .maybeSingle(),
         supabase
@@ -257,10 +264,23 @@ export function Dashboard() {
 
       if (profileRes.data) {
         const streakData = streakRes.data ?? {};
+        const lastStreakDate = (streakData as any).last_streak_date as string | null ?? null;
+        const yesterday = yesterdayISO();
+
+        // If the user didn't log food yesterday (or earlier), the streak is broken.
+        let streakCount = (streakData as any).streak_count as number | null ?? null;
+        if (lastStreakDate !== null && lastStreakDate < yesterday) {
+          streakCount = 0;
+          await supabase
+            .from("profiles")
+            .update({ streak_count: 0 })
+            .eq("id", user!.id);
+        }
+
         setProfile({
-          ...(profileRes.data as Omit<Profile, "streak_count" | "last_completed_date">),
-          streak_count: (streakData as any).streak_count ?? null,
-          last_completed_date: (streakData as any).last_completed_date ?? null,
+          ...(profileRes.data as Omit<Profile, "streak_count" | "last_streak_date">),
+          streak_count: streakCount,
+          last_streak_date: lastStreakDate,
         });
       }
 
@@ -295,6 +315,43 @@ export function Dashboard() {
     };
   }, [user]);
 
+  // ── Streak update on food log ──────────────────────────────────────────────
+
+  async function updateStreakOnFoodLog(userId: string) {
+    if (!supabase) return;
+    console.log("[Dashboard] updateStreakOnFoodLog called");
+
+    // Re-fetch streak data to avoid stale closure issues
+    const { data: streakData } = await supabase
+      .from("profiles")
+      .select("streak_count, last_streak_date")
+      .eq("id", userId)
+      .maybeSingle();
+
+    console.log("[Dashboard] streak data from DB:", streakData);
+    if (!streakData) return;
+
+    const today = todayISO();
+    const yesterday = yesterdayISO();
+    const lastDate = (streakData as any).last_streak_date as string | null;
+
+    if (lastDate === today) {
+      console.log("[Dashboard] streak already counted for today, no update");
+      return;
+    }
+
+    const newStreak = lastDate === yesterday
+      ? ((streakData as any).streak_count as number ?? 0) + 1
+      : 1;
+
+    await supabase
+      .from("profiles")
+      .update({ streak_count: newStreak, last_streak_date: today })
+      .eq("id", userId);
+
+    setProfile((p) => p ? { ...p, streak_count: newStreak, last_streak_date: today } : p);
+  }
+
   // ── Realtime food log updates ──────────────────────────────────────────────
 
   useEffect(() => {
@@ -325,6 +382,8 @@ export function Dashboard() {
             );
             setTotals(t);
           }
+          // Increment streak on first food log of the day
+          await updateStreakOnFoodLog(user.id);
         }
       )
       .subscribe();
@@ -392,59 +451,17 @@ export function Dashboard() {
 
   // ── Complete Today ─────────────────────────────────────────────────────────
 
-  async function handleCompleteToday() {
-    if (!user || !supabase || !profile) return;
+  function handleCompleteToday() {
+    if (!profile) return;
     const consumed = totals.calories;
     const goal = totalCaloriesAvailable;
     const { grade, gradeColor } = calcGrade(consumed, goal, totals, profile);
     const deficit = goal - consumed;
-
-    // Update streak
-    const today = todayISO();
-    const lastDate = profile.last_completed_date;
-    const yesterday = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      return d.toISOString().slice(0, 10);
-    })();
-
-    let newStreak = 1;
-    if (lastDate === yesterday) {
-      newStreak = (profile.streak_count ?? 0) + 1;
-    } else if (lastDate === today) {
-      newStreak = profile.streak_count ?? 1; // already completed today
-    }
-
-    await supabase
-      .from("profiles")
-      .update({ streak_count: newStreak, last_completed_date: today })
-      .eq("id", user.id);
-
-    setProfile((p) => p ? { ...p, streak_count: newStreak, last_completed_date: today } : p);
     setCompletionResult({ grade, gradeColor, deficit, consumed, goal });
     setShowCelebration(true);
   }
 
-  async function handleUndo() {
-    if (!user || !supabase || !profile) return;
-
-    // Restore previous streak
-    const yesterday = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      return d.toISOString().slice(0, 10);
-    })();
-    const restoredStreak = Math.max(0, (profile.streak_count ?? 1) - 1);
-    const restoredDate = restoredStreak > 0 ? yesterday : null;
-
-    await supabase
-      .from("profiles")
-      .update({ streak_count: restoredStreak, last_completed_date: restoredDate })
-      .eq("id", user.id);
-
-    setProfile((p) =>
-      p ? { ...p, streak_count: restoredStreak, last_completed_date: restoredDate } : p
-    );
+  function handleUndo() {
     setShowCelebration(false);
     setCompletionResult(null);
   }

@@ -5,6 +5,17 @@ import { Card } from "./Card";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./AuthContext";
 
+function todayISO() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function yesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 type Mode = "search" | "barcode" | "manual";
 
 type Props = {
@@ -62,6 +73,30 @@ export function FoodLogSection({ onLogged }: Props) {
       setCarbs("");
       setFat("");
       onLogged?.();
+
+      // Update streak — must run here because Dashboard may not be mounted
+      console.log("[FoodLog] updateStreakOnFoodLog called");
+      const today = todayISO();
+      const yesterday = yesterdayISO();
+      const { data: streakData } = await supabase
+        .from("profiles")
+        .select("streak_count, last_streak_date")
+        .eq("id", user.id)
+        .maybeSingle();
+      console.log("[FoodLog] streak data from DB:", streakData);
+      if (streakData) {
+        const lastDate = (streakData as any).last_streak_date as string | null;
+        if (lastDate === today) {
+          console.log("[FoodLog] streak already counted for today, no update");
+        } else {
+          const newStreak = lastDate === yesterday ? ((streakData as any).streak_count ?? 0) + 1 : 1;
+          await supabase
+            .from("profiles")
+            .update({ streak_count: newStreak, last_streak_date: today })
+            .eq("id", user.id);
+          console.log("[FoodLog] streak updated →", newStreak, "| last_streak_date:", today);
+        }
+      }
     }
     setSaving(false);
   }
