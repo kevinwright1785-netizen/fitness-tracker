@@ -27,9 +27,11 @@ export default function ProfilePage() {
   const [dailyCarbs, setDailyCarbs] = useState("");
   const [dailyFat, setDailyFat] = useState("");
 
+  // Editable weight goal
+  const [goalWeight, setGoalWeight] = useState("");
+
   // Read-only weight stats
   const [startingWeight, setStartingWeight] = useState<number | null>(null);
-  const [goalWeight, setGoalWeight] = useState<number | null>(null);
   const [latestWeightLbs, setLatestWeightLbs] = useState<number | null>(null);
 
   const [saving, setSaving] = useState(false);
@@ -69,7 +71,7 @@ export default function ProfilePage() {
         setDailyCarbs(data.daily_carbs ? String(data.daily_carbs) : "");
         setDailyFat(data.daily_fat ? String(data.daily_fat) : "");
         setStartingWeight(data.current_weight ?? null);
-        setGoalWeight(data.goal_weight ?? null);
+        setGoalWeight(data.goal_weight ? String(data.goal_weight) : "");
       }
 
       if (weightRes.data?.[0]) {
@@ -115,6 +117,7 @@ export default function ProfilePage() {
         height_in: heightIn ? Number(heightIn) : null,
         gender: gender || null,
         goal,
+        goal_weight: goalWeight ? Number(goalWeight) : null,
         weekly_pace: goal === "lose" ? Number(weeklyPace || "1") : null,
         activity_level: activity,
         daily_calories: tdee,
@@ -140,11 +143,10 @@ export default function ProfilePage() {
         </header>
 
         {/* Weight stats — read only */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {[
             { label: "Starting Weight", value: startingWeight },
             { label: "Current Weight", value: currentWeightDisplay },
-            { label: "Goal Weight", value: goalWeight },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-2xl bg-slate-900 px-3 py-3 ring-1 ring-slate-800">
               <p className="text-[10px] text-slate-500">{label}</p>
@@ -228,6 +230,17 @@ export default function ProfilePage() {
                 <option value="maintain">Maintain weight</option>
                 <option value="lose">Lose weight</option>
               </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-300">Goal weight (lbs)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="e.g. 185"
+                value={goalWeight}
+                onChange={(e) => setGoalWeight(e.target.value)}
+                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-300">Weekly pace (lbs/week)</label>
