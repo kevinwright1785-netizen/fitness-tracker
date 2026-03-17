@@ -89,18 +89,17 @@ export function MacrosSection({ refreshToken = 0 }: Props) {
       const { data: profile } = await supabase
         .from("profiles")
         .select(
-          "id, height_inches, gender, goal_calories, goal_protein, goal_carbs, goal_fat, created_at"
+          "id, daily_calories, daily_protein, daily_carbs, daily_fat"
         )
         .eq("id", user.id)
         .maybeSingle();
 
       if (profile) {
-        console.log("[Macros] Loaded profile goals", profile);
         setGoals({
-          calories: profile.goal_calories,
-          protein: profile.goal_protein,
-          carbs: profile.goal_carbs,
-          fat: profile.goal_fat
+          calories: profile.daily_calories,
+          protein: profile.daily_protein,
+          carbs: profile.daily_carbs,
+          fat: profile.daily_fat
         });
       }
     }

@@ -1,6 +1,6 @@
 {
-  "name": "Fitness Tracker PWA",
-  "short_name": "FitTracker",
+  "name": "TrackRight",
+  "short_name": "TrackRight",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",

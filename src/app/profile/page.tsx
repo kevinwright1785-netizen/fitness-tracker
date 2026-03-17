@@ -1,18 +1,29 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/components/AuthContext";
 import { BottomNav } from "@/components/BottomNav";
+import { calculateMacros, calculateTDEE, GoalType, ActivityLevel, calculateAge } from "@/lib/goals";
 
 export default function ProfilePage() {
   const { user } = useAuth();
-  const [height, setHeight] = useState("");
+  const router = useRouter();
+  const [firstName, setFirstName] = useState("");
+  const [dob, setDob] = useState("");
+  const [heightFt, setHeightFt] = useState("");
+  const [heightIn, setHeightIn] = useState("");
   const [gender, setGender] = useState<"male" | "female" | "other" | "">("");
-  const [goalCalories, setGoalCalories] = useState("");
-  const [goalProtein, setGoalProtein] = useState("");
-  const [goalCarbs, setGoalCarbs] = useState("");
-  const [goalFat, setGoalFat] = useState("");
+  const [goal, setGoal] = useState<GoalType>("maintain");
+  const [currentWeight, setCurrentWeight] = useState("");
+  const [goalWeight, setGoalWeight] = useState("");
+  const [weeklyPace, setWeeklyPace] = useState("1");
+  const [activity, setActivity] = useState<ActivityLevel>("sedentary");
+  const [dailyCalories, setDailyCalories] = useState("");
+  const [dailyProtein, setDailyProtein] = useState("");
+  const [dailyCarbs, setDailyCarbs] = useState("");
+  const [dailyFat, setDailyFat] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -22,17 +33,25 @@ export default function ProfilePage() {
       const { data } = await supabase
         .from("profiles")
         .select(
-          "height, gender, goal_calories, goal_protein, goal_carbs, goal_fat"
+          "first_name, dob, height_ft, height_in, gender, goal, current_weight, goal_weight, weekly_pace, activity_level, daily_calories, daily_protein, daily_carbs, daily_fat"
         )
-        .eq("user_id", user.id)
+        .eq("id", user.id)
         .maybeSingle();
       if (data) {
-        setHeight(data.height ? String(data.height) : "");
+        setFirstName(data.first_name || "");
+        setDob(data.dob || "");
+        setHeightFt(data.height_ft ? String(data.height_ft) : "");
+        setHeightIn(data.height_in ? String(data.height_in) : "");
         setGender((data.gender as any) || "");
-        setGoalCalories(data.goal_calories ? String(data.goal_calories) : "");
-        setGoalProtein(data.goal_protein ? String(data.goal_protein) : "");
-        setGoalCarbs(data.goal_carbs ? String(data.goal_carbs) : "");
-        setGoalFat(data.goal_fat ? String(data.goal_fat) : "");
+        setGoal((data.goal as GoalType) || "maintain");
+        setCurrentWeight(data.current_weight ? String(data.current_weight) : "");
+        setGoalWeight(data.goal_weight ? String(data.goal_weight) : "");
+        setWeeklyPace(data.weekly_pace ? String(data.weekly_pace) : "1");
+        setActivity((data.activity_level as ActivityLevel) || "sedentary");
+        setDailyCalories(data.daily_calories ? String(data.daily_calories) : "");
+        setDailyProtein(data.daily_protein ? String(data.daily_protein) : "");
+        setDailyCarbs(data.daily_carbs ? String(data.daily_carbs) : "");
+        setDailyFat(data.daily_fat ? String(data.daily_fat) : "");
       }
     }
     load();
@@ -44,19 +63,48 @@ export default function ProfilePage() {
     setSaving(true);
     setMessage(null);
 
+    const heightCm =
+      Number(heightFt || 0) * 30.48 + Number(heightIn || 0) * 2.54;
+    const weightLbs = currentWeight ? Number(currentWeight) : 170;
+    const age = dob ? calculateAge(dob) : 30;
+
+    const tdee = calculateTDEE({
+      gender: (gender || "male") as any,
+      weightLbs,
+      heightCm,
+      age,
+      activity,
+      goal,
+      weeklyPaceLbs: goal === "lose" ? Number(weeklyPace || "1") : null
+    });
+    const macros = calculateMacros(tdee, goal);
+
+    setDailyCalories(String(tdee));
+    setDailyProtein(String(macros.protein));
+    setDailyCarbs(String(macros.carbs));
+    setDailyFat(String(macros.fat));
+
     const payload = {
-      user_id: user.id,
-      height: height ? Number(height) : null,
+      id: user.id,
+      first_name: firstName || null,
+      dob: dob || null,
+      height_ft: heightFt ? Number(heightFt) : null,
+      height_in: heightIn ? Number(heightIn) : null,
       gender: gender || null,
-      goal_calories: goalCalories ? Number(goalCalories) : null,
-      goal_protein: goalProtein ? Number(goalProtein) : null,
-      goal_carbs: goalCarbs ? Number(goalCarbs) : null,
-      goal_fat: goalFat ? Number(goalFat) : null
+      goal,
+      current_weight: currentWeight ? Number(currentWeight) : null,
+      goal_weight: goalWeight ? Number(goalWeight) : null,
+      weekly_pace: goal === "lose" ? Number(weeklyPace || "1") : null,
+      activity_level: activity,
+      daily_calories: tdee,
+      daily_protein: macros.protein,
+      daily_carbs: macros.carbs,
+      daily_fat: macros.fat
     };
 
     const { error } = await supabase
       .from("profiles")
-      .upsert(payload, { onConflict: "user_id" });
+      .upsert(payload, { onConflict: "id" });
 
     if (error) {
       setMessage(error.message);
@@ -72,22 +120,65 @@ export default function ProfilePage() {
         <header className="mt-2">
           <h1 className="text-xl font-semibold text-white">Profile</h1>
           <p className="text-xs text-slate-400">
-            Set your height and macro goals.
+            View and adjust your TrackRight goals.
           </p>
         </header>
 
         <form onSubmit={onSubmit} className="space-y-3 text-sm">
           <div>
             <label className="mb-1 block text-xs text-slate-300">
-              Height (inches)
+              First name
             </label>
             <input
-              type="number"
-              inputMode="decimal"
-              value={height}
-              onChange={(e) => setHeight(e.target.value)}
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
               className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-slate-300">
+              Date of birth
+            </label>
+            <input
+              type="date"
+              value={dob}
+              onChange={(e) => setDob(e.target.value)}
+              className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-slate-300">
+              Height
+            </label>
+            <div className="flex gap-2">
+              <select
+                value={heightFt}
+                onChange={(e) => setHeightFt(e.target.value)}
+                className="flex-1 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">ft</option>
+                {[4, 5, 6, 7].map((ft) => (
+                  <option key={ft} value={ft}>
+                    {ft} ft
+                  </option>
+                ))}
+              </select>
+              <select
+                value={heightIn}
+                onChange={(e) => setHeightIn(e.target.value)}
+                className="flex-1 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">in</option>
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <option key={i} value={i}>
+                    {i} in
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
@@ -107,51 +198,95 @@ export default function ProfilePage() {
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="mb-1 block text-xs text-slate-300">
-                Daily calories
+                Goal
+              </label>
+              <select
+                value={goal}
+                onChange={(e) => setGoal(e.target.value as GoalType)}
+                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="maintain">Maintain weight</option>
+                <option value="lose">Lose weight</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-300">
+                Current weight (lbs)
               </label>
               <input
                 type="number"
                 inputMode="decimal"
-                value={goalCalories}
-                onChange={(e) => setGoalCalories(e.target.value)}
+                value={currentWeight}
+                onChange={(e) => setCurrentWeight(e.target.value)}
                 className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-300">
-                Protein (g)
+                Target weight (lbs)
               </label>
               <input
                 type="number"
                 inputMode="decimal"
-                value={goalProtein}
-                onChange={(e) => setGoalProtein(e.target.value)}
+                value={goalWeight}
+                onChange={(e) => setGoalWeight(e.target.value)}
                 className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-300">
-                Carbs (g)
+                Weekly pace (lbs/week)
               </label>
               <input
                 type="number"
                 inputMode="decimal"
-                value={goalCarbs}
-                onChange={(e) => setGoalCarbs(e.target.value)}
+                value={weeklyPace}
+                onChange={(e) => setWeeklyPace(e.target.value)}
                 className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-300">
-                Fat (g)
-              </label>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={goalFat}
-                onChange={(e) => setGoalFat(e.target.value)}
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-slate-300">
+              Activity level
+            </label>
+            <select
+              value={activity}
+              onChange={(e) => setActivity(e.target.value as ActivityLevel)}
+              className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="sedentary">Sedentary</option>
+              <option value="light">Lightly Active</option>
+              <option value="moderate">Moderately Active</option>
+              <option value="very">Very Active</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
+            <div className="rounded-2xl bg-slate-900 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Daily calories</p>
+              <p className="text-sm font-semibold text-emerald-400">
+                {dailyCalories || "-"} kcal
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-900 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Protein (g)</p>
+              <p className="text-sm font-semibold text-emerald-400">
+                {dailyProtein || "-"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-900 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Carbs (g)</p>
+              <p className="text-sm font-semibold text-sky-400">
+                {dailyCarbs || "-"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-900 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Fat (g)</p>
+              <p className="text-sm font-semibold text-amber-400">
+                {dailyFat || "-"}
+              </p>
             </div>
           </div>
 
@@ -169,6 +304,17 @@ export default function ProfilePage() {
             {saving ? "Saving..." : "Save profile"}
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={async () => {
+            await supabase.auth.signOut();
+            router.replace("/login");
+          }}
+          className="mt-2 w-full rounded-2xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-400 ring-1 ring-red-500/40 hover:bg-red-500/20"
+        >
+          Log Out
+        </button>
       </main>
       <BottomNav />
     </>

@@ -3,8 +3,8 @@ import "./globals.css";
 import { AuthProvider } from "@/components/AuthContext";
 
 export const metadata: Metadata = {
-  title: "Fitness Tracker PWA",
-  description: "Food, macros, and weight tracking on the go."
+  title: "TrackRight",
+  description: "Track food, macros, weight, and steps with TrackRight."
 };
 
 export default function RootLayout({
