@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) return;
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       const nextUser = session?.user ?? null;
       if (!nextUser) {
         setUser(null);
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select("onboarding_complete")
           .eq("id", nextUser.id)
           .maybeSingle()
-          .then(({ data: profile }) => {
+          .then(({ data: profile }: { data: any }) => {
             setOnboardingComplete(profile?.onboarding_complete ?? false);
             setLoading(false);
           });

@@ -10,33 +10,51 @@ import { calculateMacros, calculateTDEE, GoalType, ActivityLevel, calculateAge }
 export default function ProfilePage() {
   const { user } = useAuth();
   const router = useRouter();
+
+  // Editable fields
   const [firstName, setFirstName] = useState("");
   const [dob, setDob] = useState("");
   const [heightFt, setHeightFt] = useState("");
   const [heightIn, setHeightIn] = useState("");
   const [gender, setGender] = useState<"male" | "female" | "other" | "">("");
   const [goal, setGoal] = useState<GoalType>("maintain");
-  const [currentWeight, setCurrentWeight] = useState("");
-  const [goalWeight, setGoalWeight] = useState("");
   const [weeklyPace, setWeeklyPace] = useState("1");
   const [activity, setActivity] = useState<ActivityLevel>("sedentary");
+
+  // Calculated / display-only
   const [dailyCalories, setDailyCalories] = useState("");
   const [dailyProtein, setDailyProtein] = useState("");
   const [dailyCarbs, setDailyCarbs] = useState("");
   const [dailyFat, setDailyFat] = useState("");
+
+  // Read-only weight stats
+  const [startingWeight, setStartingWeight] = useState<number | null>(null);
+  const [goalWeight, setGoalWeight] = useState<number | null>(null);
+  const [latestWeightLbs, setLatestWeightLbs] = useState<number | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user || !supabase) return;
     async function load() {
-      const { data } = await supabase
-        .from("profiles")
-        .select(
-          "first_name, dob, height_ft, height_in, gender, goal, current_weight, goal_weight, weekly_pace, activity_level, daily_calories, daily_protein, daily_carbs, daily_fat"
-        )
-        .eq("id", user.id)
-        .maybeSingle();
+      const [profileRes, weightRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select(
+            "first_name, dob, height_ft, height_in, gender, goal, current_weight, goal_weight, weekly_pace, activity_level, daily_calories, daily_protein, daily_carbs, daily_fat"
+          )
+          .eq("id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("weight_logs")
+          .select("weight_lbs")
+          .eq("user_id", user.id)
+          .order("logged_at", { ascending: false })
+          .limit(1),
+      ]);
+
+      const data = profileRes.data;
       if (data) {
         setFirstName(data.first_name || "");
         setDob(data.dob || "");
@@ -44,14 +62,18 @@ export default function ProfilePage() {
         setHeightIn(data.height_in ? String(data.height_in) : "");
         setGender((data.gender as any) || "");
         setGoal((data.goal as GoalType) || "maintain");
-        setCurrentWeight(data.current_weight ? String(data.current_weight) : "");
-        setGoalWeight(data.goal_weight ? String(data.goal_weight) : "");
         setWeeklyPace(data.weekly_pace ? String(data.weekly_pace) : "1");
         setActivity((data.activity_level as ActivityLevel) || "sedentary");
         setDailyCalories(data.daily_calories ? String(data.daily_calories) : "");
         setDailyProtein(data.daily_protein ? String(data.daily_protein) : "");
         setDailyCarbs(data.daily_carbs ? String(data.daily_carbs) : "");
         setDailyFat(data.daily_fat ? String(data.daily_fat) : "");
+        setStartingWeight(data.current_weight ?? null);
+        setGoalWeight(data.goal_weight ?? null);
+      }
+
+      if (weightRes.data?.[0]) {
+        setLatestWeightLbs(weightRes.data[0].weight_lbs);
       }
     }
     load();
@@ -63,9 +85,9 @@ export default function ProfilePage() {
     setSaving(true);
     setMessage(null);
 
-    const heightCm =
-      Number(heightFt || 0) * 30.48 + Number(heightIn || 0) * 2.54;
-    const weightLbs = currentWeight ? Number(currentWeight) : 170;
+    const heightCm = Number(heightFt || 0) * 30.48 + Number(heightIn || 0) * 2.54;
+    // Use starting weight for TDEE calculation (set at onboarding, stable baseline)
+    const weightLbs = startingWeight ?? 170;
     const age = dob ? calculateAge(dob) : 30;
 
     const tdee = calculateTDEE({
@@ -75,7 +97,7 @@ export default function ProfilePage() {
       age,
       activity,
       goal,
-      weeklyPaceLbs: goal === "lose" ? Number(weeklyPace || "1") : null
+      weeklyPaceLbs: goal === "lose" ? Number(weeklyPace || "1") : null,
     });
     const macros = calculateMacros(tdee, goal);
 
@@ -84,51 +106,59 @@ export default function ProfilePage() {
     setDailyCarbs(String(macros.carbs));
     setDailyFat(String(macros.fat));
 
-    const payload = {
-      id: user.id,
-      first_name: firstName || null,
-      dob: dob || null,
-      height_ft: heightFt ? Number(heightFt) : null,
-      height_in: heightIn ? Number(heightIn) : null,
-      gender: gender || null,
-      goal,
-      current_weight: currentWeight ? Number(currentWeight) : null,
-      goal_weight: goalWeight ? Number(goalWeight) : null,
-      weekly_pace: goal === "lose" ? Number(weeklyPace || "1") : null,
-      activity_level: activity,
-      daily_calories: tdee,
-      daily_protein: macros.protein,
-      daily_carbs: macros.carbs,
-      daily_fat: macros.fat
-    };
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        id: user.id,
+        first_name: firstName || null,
+        dob: dob || null,
+        height_ft: heightFt ? Number(heightFt) : null,
+        height_in: heightIn ? Number(heightIn) : null,
+        gender: gender || null,
+        goal,
+        weekly_pace: goal === "lose" ? Number(weeklyPace || "1") : null,
+        activity_level: activity,
+        daily_calories: tdee,
+        daily_protein: macros.protein,
+        daily_carbs: macros.carbs,
+        daily_fat: macros.fat,
+      },
+      { onConflict: "id" }
+    );
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(payload, { onConflict: "id" });
-
-    if (error) {
-      setMessage(error.message);
-    } else {
-      setMessage("Profile saved.");
-    }
+    setMessage(error ? error.message : "Profile saved.");
     setSaving(false);
   }
+
+  const currentWeightDisplay = latestWeightLbs ?? startingWeight;
 
   return (
     <>
       <main className="flex flex-1 flex-col gap-4 py-4">
         <header className="mt-2">
           <h1 className="text-xl font-semibold text-white">Profile</h1>
-          <p className="text-xs text-slate-400">
-            View and adjust your TrackRight goals.
-          </p>
+          <p className="text-xs text-slate-400">View and adjust your TrackRight goals.</p>
         </header>
+
+        {/* Weight stats — read only */}
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: "Starting Weight", value: startingWeight },
+            { label: "Current Weight", value: currentWeightDisplay },
+            { label: "Goal Weight", value: goalWeight },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-2xl bg-slate-900 px-3 py-3 ring-1 ring-slate-800">
+              <p className="text-[10px] text-slate-500">{label}</p>
+              <p className="mt-1 text-base font-bold text-white">
+                {value != null ? value.toFixed(1) : "—"}
+              </p>
+              <p className="text-[10px] text-slate-500">lbs</p>
+            </div>
+          ))}
+        </div>
 
         <form onSubmit={onSubmit} className="space-y-3 text-sm">
           <div>
-            <label className="mb-1 block text-xs text-slate-300">
-              First name
-            </label>
+            <label className="mb-1 block text-xs text-slate-300">First name</label>
             <input
               type="text"
               value={firstName}
@@ -138,9 +168,7 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-300">
-              Date of birth
-            </label>
+            <label className="mb-1 block text-xs text-slate-300">Date of birth</label>
             <input
               type="date"
               value={dob}
@@ -150,9 +178,7 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-300">
-              Height
-            </label>
+            <label className="mb-1 block text-xs text-slate-300">Height</label>
             <div className="flex gap-2">
               <select
                 value={heightFt}
@@ -161,9 +187,7 @@ export default function ProfilePage() {
               >
                 <option value="">ft</option>
                 {[4, 5, 6, 7].map((ft) => (
-                  <option key={ft} value={ft}>
-                    {ft} ft
-                  </option>
+                  <option key={ft} value={ft}>{ft} ft</option>
                 ))}
               </select>
               <select
@@ -173,9 +197,7 @@ export default function ProfilePage() {
               >
                 <option value="">in</option>
                 {Array.from({ length: 12 }).map((_, i) => (
-                  <option key={i} value={i}>
-                    {i} in
-                  </option>
+                  <option key={i} value={i}>{i} in</option>
                 ))}
               </select>
             </div>
@@ -197,9 +219,7 @@ export default function ProfilePage() {
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-xs text-slate-300">
-                Goal
-              </label>
+              <label className="mb-1 block text-xs text-slate-300">Goal</label>
               <select
                 value={goal}
                 onChange={(e) => setGoal(e.target.value as GoalType)}
@@ -210,33 +230,7 @@ export default function ProfilePage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-300">
-                Current weight (lbs)
-              </label>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={currentWeight}
-                onChange={(e) => setCurrentWeight(e.target.value)}
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-300">
-                Target weight (lbs)
-              </label>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={goalWeight}
-                onChange={(e) => setGoalWeight(e.target.value)}
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-300">
-                Weekly pace (lbs/week)
-              </label>
+              <label className="mb-1 block text-xs text-slate-300">Weekly pace (lbs/week)</label>
               <input
                 type="number"
                 inputMode="decimal"
@@ -248,9 +242,7 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-300">
-              Activity level
-            </label>
+            <label className="mb-1 block text-xs text-slate-300">Activity level</label>
             <select
               value={activity}
               onChange={(e) => setActivity(e.target.value as ActivityLevel)}
@@ -266,35 +258,23 @@ export default function ProfilePage() {
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
             <div className="rounded-2xl bg-slate-900 px-3 py-2">
               <p className="text-[11px] text-slate-400">Daily calories</p>
-              <p className="text-sm font-semibold text-emerald-400">
-                {dailyCalories || "-"} kcal
-              </p>
+              <p className="text-sm font-semibold text-emerald-400">{dailyCalories || "—"} kcal</p>
             </div>
             <div className="rounded-2xl bg-slate-900 px-3 py-2">
-              <p className="text-[11px] text-slate-400">Protein (g)</p>
-              <p className="text-sm font-semibold text-emerald-400">
-                {dailyProtein || "-"}
-              </p>
+              <p className="text-[11px] text-slate-400">Protein</p>
+              <p className="text-sm font-semibold text-emerald-400">{dailyProtein || "—"} g</p>
             </div>
             <div className="rounded-2xl bg-slate-900 px-3 py-2">
-              <p className="text-[11px] text-slate-400">Carbs (g)</p>
-              <p className="text-sm font-semibold text-sky-400">
-                {dailyCarbs || "-"}
-              </p>
+              <p className="text-[11px] text-slate-400">Carbs</p>
+              <p className="text-sm font-semibold text-sky-400">{dailyCarbs || "—"} g</p>
             </div>
             <div className="rounded-2xl bg-slate-900 px-3 py-2">
-              <p className="text-[11px] text-slate-400">Fat (g)</p>
-              <p className="text-sm font-semibold text-amber-400">
-                {dailyFat || "-"}
-              </p>
+              <p className="text-[11px] text-slate-400">Fat</p>
+              <p className="text-sm font-semibold text-amber-400">{dailyFat || "—"} g</p>
             </div>
           </div>
 
-          {message && (
-            <p className="text-xs text-emerald-400">
-              {message}
-            </p>
-          )}
+          {message && <p className="text-xs text-emerald-400">{message}</p>}
 
           <button
             type="submit"
@@ -320,4 +300,3 @@ export default function ProfilePage() {
     </>
   );
 }
-

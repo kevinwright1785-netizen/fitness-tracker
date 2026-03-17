@@ -1,101 +1,691 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { FoodLogSection } from "@/components/FoodLogSection";
-import { MacrosSection } from "@/components/MacrosSection";
-import { WeightSection } from "@/components/WeightSection";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./AuthContext";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Profile = {
+  first_name: string | null;
+  daily_calories: number | null;
+  daily_protein: number | null;
+  daily_carbs: number | null;
+  daily_fat: number | null;
+  current_weight: number | null;
+  streak_count: number | null;
+  last_completed_date: string | null;
+};
+
+type Totals = { calories: number; protein: number; carbs: number; fat: number };
+
+type CompletionResult = {
+  grade: string;
+  gradeColor: string;
+  deficit: number; // positive = deficit, negative = surplus
+  consumed: number;
+  goal: number;
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function todayISO() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function todayRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function calcGrade(
+  consumed: number,
+  goal: number,
+  totals: Totals,
+  profile: Profile
+): { grade: string; gradeColor: string } {
+  const diff = Math.abs(consumed - goal);
+  const pctP = profile.daily_protein
+    ? totals.protein / profile.daily_protein
+    : 0;
+  const pctC = profile.daily_carbs ? totals.carbs / profile.daily_carbs : 0;
+  const pctF = profile.daily_fat ? totals.fat / profile.daily_fat : 0;
+  const macrosHit80 = pctP >= 0.8 && pctC >= 0.8 && pctF >= 0.8;
+  const macrosHit60 = pctP >= 0.6 && pctC >= 0.6 && pctF >= 0.6;
+
+  if (consumed > goal + 500)
+    return { grade: "F", gradeColor: "text-rose-500" };
+  if (diff <= 100 && macrosHit80)
+    return { grade: "A", gradeColor: "text-emerald-400" };
+  if (diff <= 200 && macrosHit60)
+    return { grade: "B", gradeColor: "text-sky-400" };
+  if (diff <= 300) return { grade: "C", gradeColor: "text-yellow-400" };
+  if (diff <= 500) return { grade: "D", gradeColor: "text-orange-400" };
+  return { grade: "F", gradeColor: "text-rose-500" };
+}
+
+// ─── Circular progress ring ───────────────────────────────────────────────────
+
+function CalorieRing({
+  consumed,
+  goal,
+  stepsCalories,
+}: {
+  consumed: number;
+  goal: number;
+  stepsCalories: number;
+}) {
+  const totalGoal = goal + stepsCalories;
+  const remaining = totalGoal - consumed; // signed — negative means over goal
+  const isOver = remaining < 0;
+  const pct = totalGoal > 0 ? Math.min(1, consumed / totalGoal) : 0;
+
+  const r = 88;
+  const circ = 2 * Math.PI * r;
+  // When over goal, fill the ring completely
+  const dash = isOver ? circ : pct * circ;
+
+  let ringColor = "#10b981"; // emerald
+  if (isOver) ringColor = "#f43f5e"; // rose
+  else if (remaining <= 200) ringColor = "#f59e0b"; // amber
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div className="relative flex items-center justify-center" style={{ width: 220, height: 220 }}>
+        <svg width="220" height="220" className="-rotate-90">
+          {/* track */}
+          <circle cx="110" cy="110" r={r} fill="none" stroke="#1e293b" strokeWidth="16" />
+          {/* progress */}
+          <circle
+            cx="110"
+            cy="110"
+            r={r}
+            fill="none"
+            stroke={ringColor}
+            strokeWidth="16"
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circ}`}
+            style={{ transition: "stroke-dasharray 0.6s ease, stroke 0.4s ease" }}
+          />
+        </svg>
+        <div className="absolute flex flex-col items-center">
+          <span
+            className="text-4xl font-bold tabular-nums"
+            style={{ color: isOver ? "#f43f5e" : "white" }}
+          >
+            {isOver ? "-" : ""}{Math.abs(remaining).toFixed(0)}
+          </span>
+          <span className="text-xs text-slate-400">calories remaining</span>
+        </div>
+      </div>
+      <p className="text-xs text-slate-400">
+        <span className="font-semibold text-white">{consumed.toFixed(0)}</span> consumed
+        {" · "}
+        <span className="font-semibold text-white">{totalGoal.toFixed(0)}</span> goal
+      </p>
+    </div>
+  );
+}
+
+// ─── Fireworks animation ──────────────────────────────────────────────────────
+
+function Fireworks() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      {Array.from({ length: 20 }).map((_, i) => (
+        <span
+          key={i}
+          className="firework-particle"
+          style={{
+            left: `${10 + Math.random() * 80}%`,
+            top: `${5 + Math.random() * 60}%`,
+            animationDelay: `${Math.random() * 1.2}s`,
+            backgroundColor: ["#10b981", "#f59e0b", "#38bdf8", "#f472b6", "#a78bfa"][i % 5],
+          }}
+        />
+      ))}
+      <style>{`
+        .firework-particle {
+          position: absolute;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          opacity: 0;
+          animation: burst 1.4s ease-out forwards;
+        }
+        @keyframes burst {
+          0%   { transform: scale(0) translateY(0);  opacity: 1; }
+          60%  { transform: scale(1.6) translateY(-40px); opacity: 0.9; }
+          100% { transform: scale(0.4) translateY(-70px); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
+
 export function Dashboard() {
-  const [refreshToken, setRefreshToken] = useState(0);
-  const [showSplash, setShowSplash] = useState(true);
-  const [greeting, setGreeting] = useState("Good morning");
-  const [firstName, setFirstName] = useState<string | null>(null);
-  const [dailyCalories, setDailyCalories] = useState<number | null>(null);
   const { user } = useAuth();
 
-  useEffect(() => {
-    const now = new Date();
-    const hour = now.getHours();
-    if (hour < 12) setGreeting("Good morning");
-    else if (hour < 18) setGreeting("Good afternoon");
-    else setGreeting("Good evening");
-  }, []);
+  // profile & data
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [totals, setTotals] = useState<Totals>({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [latestWeightLbs, setLatestWeightLbs] = useState<number | null>(null);
+  const [stepsToday, setStepsToday] = useState(0);
+  // UI state — only show splash once per browser session
+  const [showSplash, setShowSplash] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !sessionStorage.getItem("splashShown");
+  });
+  const [splashFading, setSplashFading] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [completionResult, setCompletionResult] = useState<CompletionResult | null>(null);
+  const [showStepsInput, setShowStepsInput] = useState(false);
+  const [stepsInput, setStepsInput] = useState("");
+  const [savingSteps, setSavingSteps] = useState(false);
+  const splashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Load all data ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!user || !supabase) {
+      sessionStorage.setItem("splashShown", "1");
       setShowSplash(false);
       return;
     }
-    let timer: ReturnType<typeof setTimeout>;
-    async function loadProfile() {
-      console.log("[Dashboard] Fetching profile for user:", user.id);
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("first_name, daily_calories")
-        .eq("id", user.id)
-        .maybeSingle();
-      console.log("[Dashboard] Profile fetch result:", { data, error });
-      if (data) {
-        setFirstName(data.first_name);
-        setDailyCalories(data.daily_calories);
+
+    async function load() {
+      const { start, end } = todayRange();
+
+      // Fetch core profile fields and the other data sources in parallel.
+      // streak_count / last_completed_date are fetched separately because
+      // they require a migration; if they don't exist yet the query will
+      // error and we fall back to defaults rather than losing all profile data.
+      const [profileRes, streakRes, foodRes, weightRes, stepsRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select(
+            "first_name, daily_calories, daily_protein, daily_carbs, daily_fat, current_weight"
+          )
+          .eq("id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("streak_count, last_completed_date")
+          .eq("id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("food_logs")
+          .select("calories, protein, carbs, fat")
+          .eq("user_id", user.id)
+          .gte("logged_at", start)
+          .lt("logged_at", end),
+        supabase
+          .from("weight_logs")
+          .select("weight_lbs")
+          .eq("user_id", user.id)
+          .order("logged_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("steps_logs")
+          .select("id, steps")
+          .eq("user_id", user.id)
+          .gte("logged_at", start)
+          .lt("logged_at", end)
+          .order("logged_at", { ascending: false })
+          .limit(1),
+      ]);
+
+      if (profileRes.error) console.error("[Dashboard] profile fetch error:", profileRes.error);
+      if (foodRes.error)    console.error("[Dashboard] food_logs fetch error:", foodRes.error);
+      if (weightRes.error)  console.error("[Dashboard] weight_logs fetch error:", weightRes.error);
+      if (stepsRes.error)   console.error("[Dashboard] steps_logs fetch error:", stepsRes.error);
+
+      if (profileRes.data) {
+        const streakData = streakRes.data ?? {};
+        setProfile({
+          ...(profileRes.data as Omit<Profile, "streak_count" | "last_completed_date">),
+          streak_count: (streakData as any).streak_count ?? null,
+          last_completed_date: (streakData as any).last_completed_date ?? null,
+        });
       }
-      timer = setTimeout(() => setShowSplash(false), 2000);
+
+      if (foodRes.data) {
+        const t = foodRes.data.reduce(
+          (acc: Totals, row: any) => ({
+            calories: acc.calories + (row.calories || 0),
+            protein: acc.protein + (row.protein || 0),
+            carbs: acc.carbs + (row.carbs || 0),
+            fat: acc.fat + (row.fat || 0),
+          }),
+          { calories: 0, protein: 0, carbs: 0, fat: 0 }
+        );
+        setTotals(t);
+      }
+
+      if (weightRes.data?.[0]) setLatestWeightLbs(weightRes.data[0].weight_lbs);
+
+      if (stepsRes.data?.[0]) setStepsToday(stepsRes.data[0].steps ?? 0);
+
+      // Splash fade — mark as shown so navigating back doesn't re-trigger
+      sessionStorage.setItem("splashShown", "1");
+      splashTimer.current = setTimeout(() => {
+        setSplashFading(true);
+        setTimeout(() => setShowSplash(false), 500);
+      }, 2000);
     }
-    loadProfile();
-    return () => clearTimeout(timer);
+
+    load();
+    return () => {
+      if (splashTimer.current) clearTimeout(splashTimer.current);
+    };
   }, [user]);
+
+  // ── Realtime food log updates ──────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!user || !supabase) return;
+    const { start, end } = todayRange();
+
+    const channel = supabase
+      .channel("dashboard-food-logs")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "food_logs", filter: `user_id=eq.${user.id}` },
+        async () => {
+          const { data } = await supabase
+            .from("food_logs")
+            .select("calories, protein, carbs, fat")
+            .eq("user_id", user.id)
+            .gte("logged_at", start)
+            .lt("logged_at", end);
+          if (data) {
+            const t = data.reduce(
+              (acc: Totals, row: any) => ({
+                calories: acc.calories + (row.calories || 0),
+                protein: acc.protein + (row.protein || 0),
+                carbs: acc.carbs + (row.carbs || 0),
+                fat: acc.fat + (row.fat || 0),
+              }),
+              { calories: 0, protein: 0, carbs: 0, fat: 0 }
+            );
+            setTotals(t);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  // ── Derived values ─────────────────────────────────────────────────────────
+
+  // MFP-equivalent: ~151 cal for 5,000 steps at 223 lbs
+  const stepsCalories = latestWeightLbs
+    ? Math.round(stepsToday * 0.000135 * latestWeightLbs)
+    : 0;
+  const baseCalories = profile?.daily_calories ?? 0;
+  const totalCaloriesAvailable = baseCalories + stepsCalories;
+
+  // If no weight log exists yet, fall back to the starting weight from profile
+  const displayWeight = latestWeightLbs ?? profile?.current_weight ?? null;
+  const startingWeight = profile?.current_weight ?? null;
+  const weightLost =
+    startingWeight && latestWeightLbs
+      ? +(startingWeight - latestWeightLbs).toFixed(1)
+      : startingWeight
+      ? 0
+      : null;
+
+  // ── Log Steps ─────────────────────────────────────────────────────────────
+
+  async function handleLogSteps(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user || !supabase || !stepsInput) return;
+    setSavingSteps(true);
+
+    const { start, end } = todayRange();
+    const steps = Number(stepsInput);
+
+    // Check if an entry already exists for today
+    const { data: existing } = await supabase
+      .from("steps_logs")
+      .select("id")
+      .eq("user_id", user.id)
+      .gte("logged_at", start)
+      .lt("logged_at", end)
+      .limit(1);
+
+    const existingId = existing?.[0]?.id;
+    const now = new Date().toISOString();
+
+    const { error } = existingId
+      ? await supabase
+          .from("steps_logs")
+          .update({ steps, logged_at: now })
+          .eq("id", existingId)
+      : await supabase
+          .from("steps_logs")
+          .insert({ user_id: user.id, steps, logged_at: now });
+
+    if (!error) {
+      setStepsToday(steps);
+      setStepsInput("");
+      setShowStepsInput(false);
+    }
+    setSavingSteps(false);
+  }
+
+  // ── Complete Today ─────────────────────────────────────────────────────────
+
+  async function handleCompleteToday() {
+    if (!user || !supabase || !profile) return;
+    const consumed = totals.calories;
+    const goal = totalCaloriesAvailable;
+    const { grade, gradeColor } = calcGrade(consumed, goal, totals, profile);
+    const deficit = goal - consumed;
+
+    // Update streak
+    const today = todayISO();
+    const lastDate = profile.last_completed_date;
+    const yesterday = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    let newStreak = 1;
+    if (lastDate === yesterday) {
+      newStreak = (profile.streak_count ?? 0) + 1;
+    } else if (lastDate === today) {
+      newStreak = profile.streak_count ?? 1; // already completed today
+    }
+
+    await supabase
+      .from("profiles")
+      .update({ streak_count: newStreak, last_completed_date: today })
+      .eq("id", user.id);
+
+    setProfile((p) => p ? { ...p, streak_count: newStreak, last_completed_date: today } : p);
+    setCompletionResult({ grade, gradeColor, deficit, consumed, goal });
+    setShowCelebration(true);
+  }
+
+  async function handleUndo() {
+    if (!user || !supabase || !profile) return;
+
+    // Restore previous streak
+    const yesterday = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    const restoredStreak = Math.max(0, (profile.streak_count ?? 1) - 1);
+    const restoredDate = restoredStreak > 0 ? yesterday : null;
+
+    await supabase
+      .from("profiles")
+      .update({ streak_count: restoredStreak, last_completed_date: restoredDate })
+      .eq("id", user.id);
+
+    setProfile((p) =>
+      p ? { ...p, streak_count: restoredStreak, last_completed_date: restoredDate } : p
+    );
+    setShowCelebration(false);
+    setCompletionResult(null);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <>
+      {/* ── Splash ── */}
       {showSplash && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950">
-          <div className="mx-6 rounded-3xl bg-slate-900 px-6 py-8 text-center ring-1 ring-slate-800">
-            <p className="mb-1 text-xs uppercase tracking-wide text-emerald-400">
-              TrackRight
+        <div
+          className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950"
+          style={{ opacity: splashFading ? 0 : 1, transition: "opacity 0.5s ease" }}
+        >
+          <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-emerald-400">
+            TrackRight
+          </p>
+          <h1 className="mb-2 text-3xl font-bold text-white">
+            {greeting()}{profile?.first_name ? `, ${profile.first_name}` : ""}.
+          </h1>
+          <p className="text-base text-slate-400">
+            Your goal today is{" "}
+            <span className="font-semibold text-emerald-400">
+              {totalCaloriesAvailable > 0 ? totalCaloriesAvailable : (profile?.daily_calories ?? "—")} cal
+            </span>
+          </p>
+        </div>
+      )}
+
+      {/* ── Celebration overlay ── */}
+      {showCelebration && completionResult && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/90 px-6">
+          <Fireworks />
+          <div className="relative z-10 w-full max-w-sm rounded-3xl bg-slate-900 px-6 py-8 text-center ring-1 ring-slate-700">
+            <p className="mb-1 text-sm font-semibold uppercase tracking-widest text-emerald-400">
+              Day Complete!
             </p>
-            <h1 className="mb-2 text-xl font-semibold text-white">
-              {greeting} {firstName || ""}.
-            </h1>
-            <p className="text-sm text-slate-400">
-              Your goal today is{" "}
-              <span className="font-semibold text-emerald-400">
-                {dailyCalories ?? "-"} calories
-              </span>
-              .
+            <div className={`my-4 text-8xl font-black ${completionResult.gradeColor}`}>
+              {completionResult.grade}
+            </div>
+            <p className="text-lg font-semibold text-white">
+              {completionResult.deficit >= 0
+                ? `${completionResult.deficit.toFixed(0)} cal deficit`
+                : `${Math.abs(completionResult.deficit).toFixed(0)} cal surplus`}
             </p>
+            <p className="mt-1 text-sm text-slate-400">
+              {completionResult.consumed.toFixed(0)} consumed · {completionResult.goal.toFixed(0)} goal
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setShowCelebration(false)}
+                className="flex-1 rounded-2xl bg-emerald-500 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+              >
+                Awesome!
+              </button>
+              <button
+                onClick={handleUndo}
+                className="rounded-2xl border border-slate-700 px-4 py-3 text-sm font-medium text-slate-400 hover:bg-slate-800"
+              >
+                Undo
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      <header className="mt-2 flex items-baseline justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-white">TrackRight</h1>
-          <p className="text-xs text-slate-400">
-            Log food, track macros, and follow your weight.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/profile"
-            className="rounded-2xl bg-slate-900 px-3 py-1 text-[11px] font-medium text-slate-200 ring-1 ring-slate-700"
-          >
-            Profile
-          </Link>
-          <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[11px] font-medium text-emerald-400 ring-1 ring-emerald-500/40">
-            PWA Ready
-          </span>
-        </div>
-      </header>
+      {/* ── Main dashboard ── */}
+      <div className="flex flex-col gap-4 pb-6">
+        {/* A) Header */}
+        <header className="flex items-center justify-between pt-2">
+          <h1 className="text-xl font-bold text-white">TrackRight</h1>
+          <div className="flex items-center gap-1.5 rounded-2xl bg-slate-900 px-3 py-1.5 ring-1 ring-slate-700">
+            <span className="text-base leading-none">🔥</span>
+            <span className="text-sm font-bold text-white">
+              {profile?.streak_count ?? 0}
+            </span>
+            <span className="text-xs text-slate-400">day streak</span>
+          </div>
+        </header>
 
-      <div className="mt-4 grid flex-1 grid-cols-1 gap-4">
-        <MacrosSection refreshToken={refreshToken} />
-        <FoodLogSection onLogged={() => setRefreshToken((v) => v + 1)} />
-        <WeightSection />
+        {/* B) Calorie ring */}
+        <section className="rounded-3xl bg-slate-900 px-4 py-6 ring-1 ring-slate-800">
+          <CalorieRing
+            consumed={totals.calories}
+            goal={baseCalories}
+            stepsCalories={stepsCalories}
+          />
+        </section>
+
+        {/* C) Macros row */}
+        <section className="grid grid-cols-3 gap-2">
+          {(
+            [
+              {
+                label: "Protein",
+                value: totals.protein,
+                goal: profile?.daily_protein ?? 0,
+                color: "bg-sky-500",
+                text: "text-sky-400",
+              },
+              {
+                label: "Carbs",
+                value: totals.carbs,
+                goal: profile?.daily_carbs ?? 0,
+                color: "bg-yellow-400",
+                text: "text-yellow-400",
+              },
+              {
+                label: "Fat",
+                value: totals.fat,
+                goal: profile?.daily_fat ?? 0,
+                color: "bg-rose-500",
+                text: "text-rose-400",
+              },
+            ] as const
+          ).map(({ label, value, goal, color, text }) => {
+            const remaining = Math.max(0, goal - value);
+            const pct = goal > 0 ? Math.min(100, (value / goal) * 100) : 0;
+            return (
+              <div
+                key={label}
+                className="flex flex-col gap-2 rounded-2xl bg-slate-900 px-3 py-3 ring-1 ring-slate-800"
+              >
+                <p className={`text-xs font-semibold ${text}`}>{label}</p>
+                <p className="text-xl font-bold text-white leading-none">
+                  {remaining.toFixed(0)}
+                  <span className="ml-0.5 text-xs font-normal text-slate-500">g left</span>
+                </p>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className={`h-full rounded-full ${color} transition-all`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500">{value.toFixed(0)} / {goal}g</p>
+              </div>
+            );
+          })}
+        </section>
+
+        {/* D) Today's stats row */}
+        <section className="grid grid-cols-2 gap-2">
+          <div className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800">
+            <p className="text-xs font-medium text-slate-400">Current Weight</p>
+            <p className="mt-1 text-2xl font-bold text-white">
+              {displayWeight != null ? displayWeight.toFixed(1) : "—"}
+              {displayWeight != null && (
+                <span className="ml-1 text-sm font-normal text-slate-400">lbs</span>
+              )}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800">
+            <p className="text-xs font-medium text-slate-400">Total Lost</p>
+            <p className="mt-1 text-2xl font-bold text-white">
+              {weightLost !== null ? Math.abs(weightLost).toFixed(1) : "—"}
+              {weightLost !== null && (
+                <span className="ml-1 text-sm font-normal text-slate-400">lbs</span>
+              )}
+            </p>
+            {weightLost !== null && weightLost > 0 && (
+              <p className="mt-0.5 text-[10px] text-emerald-400">▼ lost so far</p>
+            )}
+            {weightLost === 0 && (
+              <p className="mt-0.5 text-[10px] text-slate-500">start logging to track</p>
+            )}
+          </div>
+        </section>
+
+        {/* E) Exercise calories */}
+        <section className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Calorie Budget
+          </p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className="text-[10px] text-slate-500">Base</p>
+              <p className="text-base font-bold text-white">{baseCalories}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500">Steps earned</p>
+              <p className="text-base font-bold text-emerald-400">+{stepsCalories}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500">Total</p>
+              <p className="text-base font-bold text-white">{totalCaloriesAvailable}</p>
+            </div>
+          </div>
+          {showStepsInput ? (
+            <form onSubmit={handleLogSteps} className="mt-3 flex gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="Steps today"
+                value={stepsInput}
+                onChange={(e) => setStepsInput(e.target.value)}
+                autoFocus
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+              <button
+                type="submit"
+                disabled={savingSteps || !stepsInput}
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+              >
+                {savingSteps ? "…" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowStepsInput(false); setStepsInput(""); }}
+                className="rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800"
+              >
+                ✕
+              </button>
+            </form>
+          ) : (
+            <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-800 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">👟</span>
+                <span className="text-sm font-semibold text-white">
+                  {stepsToday.toLocaleString()} steps today
+                </span>
+              </div>
+              <button
+                onClick={() => setShowStepsInput(true)}
+                className="rounded-lg bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-600"
+              >
+                Log Steps
+              </button>
+            </div>
+          )}
+        </section>
+
+        {/* F) Complete Today */}
+        <button
+          onClick={handleCompleteToday}
+          className="w-full rounded-2xl bg-emerald-500 py-4 text-base font-bold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 active:scale-[0.98] transition-transform"
+        >
+          Complete Today ✓
+        </button>
       </div>
     </>
   );
 }
-

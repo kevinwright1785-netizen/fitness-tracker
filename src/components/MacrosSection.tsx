@@ -74,7 +74,7 @@ export function MacrosSection({ refreshToken = 0 }: Props) {
 
       if (food) {
         const totals = food.reduce(
-          (acc, row: any) => {
+          (acc: Totals, row: any) => {
             acc.calories += row.calories || 0;
             acc.protein += row.protein || 0;
             acc.carbs += row.carbs || 0;

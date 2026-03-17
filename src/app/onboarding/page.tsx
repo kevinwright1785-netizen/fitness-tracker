@@ -119,7 +119,7 @@ export default function OnboardingPage() {
     } else if (step === 4 && goal === "lose") {
       setStep(5);
     } else {
-      setStep((s) => Math.min(6, (s + 1) as Step));
+      setStep((s) => Math.min(6, s + 1) as Step);
     }
   }
 
@@ -129,7 +129,7 @@ export default function OnboardingPage() {
     } else if (step === 5 && goal === "lose") {
       setStep(4);
     } else {
-      setStep((s) => Math.max(1, (s - 1) as Step));
+      setStep((s) => Math.max(1, s - 1) as Step);
     }
   }
 
