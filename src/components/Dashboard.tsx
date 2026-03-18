@@ -9,6 +9,7 @@ import { useAuth } from "./AuthContext";
 
 type Profile = {
   first_name: string | null;
+  goal: string | null;
   daily_calories: number | null;
   daily_protein: number | null;
   daily_carbs: number | null;
@@ -26,6 +27,8 @@ type CompletionResult = {
   deficit: number; // positive = deficit, negative = surplus
   consumed: number;
   goal: number;
+  headline: string;
+  explanation: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,25 +66,50 @@ function calcGrade(
   goal: number,
   totals: Totals,
   profile: Profile
-): { grade: string; gradeColor: string } {
+): { grade: string; gradeColor: string; headline: string; explanation: string } {
+  const isLose = (profile.goal ?? "lose") === "lose";
+  const pctCal = goal > 0 ? consumed / goal : 0;
+  const pctP   = profile.daily_protein ? totals.protein / profile.daily_protein : 0;
+  const pctC   = profile.daily_carbs   ? totals.carbs   / profile.daily_carbs   : 0;
+  const pctF   = profile.daily_fat     ? totals.fat     / profile.daily_fat     : 0;
+
+  if (isLose) {
+    // Over by more than 20% = F
+    if (pctCal > 1.2)
+      return { grade: "F", gradeColor: "text-rose-500", headline: "Over your calorie goal.", explanation: "Try to stay within your target for better results." };
+    // Under 40% = F (too little food)
+    if (pctCal < 0.4)
+      return { grade: "F", gradeColor: "text-rose-500", headline: "Way too low today.", explanation: "Eating too little can slow your metabolism. Aim for a sustainable deficit." };
+    // A: 80–100% of goal AND protein ≥ 80%
+    if (pctCal >= 0.8 && pctCal <= 1.0 && pctP >= 0.8)
+      return { grade: "A", gradeColor: "text-emerald-400", headline: "You hit your deficit today!", explanation: `Great calorie control. ${pctP >= 0.95 ? "Protein was excellent." : "Protein was strong."}` };
+    // B: 70–100% of goal AND protein ≥ 60%, OR slightly over with strong protein
+    if (pctCal >= 0.7 && pctCal <= 1.0 && pctP >= 0.6)
+      return { grade: "B", gradeColor: "text-sky-400", headline: "Solid day!", explanation: "Good deficit. Bump protein a little closer to your goal for an A." };
+    if (pctCal > 1.0 && pctCal <= 1.2 && pctP >= 0.8)
+      return { grade: "B", gradeColor: "text-sky-400", headline: "Slightly over — but strong macros.", explanation: "A touch over on calories, but you nailed your protein." };
+    // C: 60–100% of goal OR protein ≥ 40%
+    if ((pctCal >= 0.6 && pctCal <= 1.0) || pctP >= 0.4)
+      return { grade: "C", gradeColor: "text-yellow-400", headline: "Decent day.", explanation: pctP < 0.6 ? "Try to hit more of your protein goal tomorrow." : "Work on staying a bit closer to your calorie target." };
+    // D: 40–70% of goal
+    if (pctCal >= 0.4 && pctCal < 0.7)
+      return { grade: "D", gradeColor: "text-orange-400", headline: "Too far under your goal.", explanation: "Sustainable deficits work better long-term — try to eat a bit more." };
+    return { grade: "F", gradeColor: "text-rose-500", headline: "Rough day.", explanation: "Aim for 70–100% of your calorie goal with solid protein." };
+  }
+
+  // Maintain — symmetric window around goal
   const diff = Math.abs(consumed - goal);
-  const pctP = profile.daily_protein
-    ? totals.protein / profile.daily_protein
-    : 0;
-  const pctC = profile.daily_carbs ? totals.carbs / profile.daily_carbs : 0;
-  const pctF = profile.daily_fat ? totals.fat / profile.daily_fat : 0;
   const macrosHit80 = pctP >= 0.8 && pctC >= 0.8 && pctF >= 0.8;
   const macrosHit60 = pctP >= 0.6 && pctC >= 0.6 && pctF >= 0.6;
-
-  if (consumed > goal + 500)
-    return { grade: "F", gradeColor: "text-rose-500" };
   if (diff <= 100 && macrosHit80)
-    return { grade: "A", gradeColor: "text-emerald-400" };
+    return { grade: "A", gradeColor: "text-emerald-400", headline: "Perfect maintenance!", explanation: "Spot-on calories and great macro balance." };
   if (diff <= 200 && macrosHit60)
-    return { grade: "B", gradeColor: "text-sky-400" };
-  if (diff <= 300) return { grade: "C", gradeColor: "text-yellow-400" };
-  if (diff <= 500) return { grade: "D", gradeColor: "text-orange-400" };
-  return { grade: "F", gradeColor: "text-rose-500" };
+    return { grade: "B", gradeColor: "text-sky-400", headline: "Great day!", explanation: "Close to your calorie goal with solid macros." };
+  if (diff <= 300)
+    return { grade: "C", gradeColor: "text-yellow-400", headline: "Pretty good.", explanation: "Within range — try to tighten up macros tomorrow." };
+  if (diff <= 500)
+    return { grade: "D", gradeColor: "text-orange-400", headline: "A bit off today.", explanation: "Try to get closer to your calorie target." };
+  return { grade: "F", gradeColor: "text-rose-500", headline: "Missed your target.", explanation: "Way off your calorie goal — get back on track tomorrow." };
 }
 
 // ─── Circular progress ring ───────────────────────────────────────────────────
@@ -226,7 +254,7 @@ export function Dashboard() {
         supabase
           .from("profiles")
           .select(
-            "first_name, daily_calories, daily_protein, daily_carbs, daily_fat, current_weight"
+            "first_name, goal, daily_calories, daily_protein, daily_carbs, daily_fat, current_weight"
           )
           .eq("id", user.id)
           .maybeSingle(),
@@ -455,9 +483,9 @@ export function Dashboard() {
     if (!profile) return;
     const consumed = totals.calories;
     const goal = totalCaloriesAvailable;
-    const { grade, gradeColor } = calcGrade(consumed, goal, totals, profile);
+    const { grade, gradeColor, headline, explanation } = calcGrade(consumed, goal, totals, profile);
     const deficit = goal - consumed;
-    setCompletionResult({ grade, gradeColor, deficit, consumed, goal });
+    setCompletionResult({ grade, gradeColor, deficit, consumed, goal, headline, explanation });
     setShowCelebration(true);
   }
 
@@ -505,12 +533,19 @@ export function Dashboard() {
               {completionResult.grade}
             </div>
             <p className="text-lg font-semibold text-white">
-              {completionResult.deficit >= 0
-                ? `${completionResult.deficit.toFixed(0)} cal deficit`
-                : `${Math.abs(completionResult.deficit).toFixed(0)} cal surplus`}
+              {completionResult.headline}
             </p>
             <p className="mt-1 text-sm text-slate-400">
+              {completionResult.explanation}
+            </p>
+            <p className="mt-3 text-xs text-slate-600">
               {completionResult.consumed.toFixed(0)} consumed · {completionResult.goal.toFixed(0)} goal
+              {completionResult.deficit !== 0 && (
+                <> · {completionResult.deficit > 0
+                  ? `${completionResult.deficit.toFixed(0)} cal deficit`
+                  : `${Math.abs(completionResult.deficit).toFixed(0)} cal surplus`}
+                </>
+              )}
             </p>
             <div className="mt-6 flex gap-3">
               <button
