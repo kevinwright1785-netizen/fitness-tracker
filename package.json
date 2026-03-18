@@ -15,7 +15,8 @@
     "canvas-confetti": "^1.9.4",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "recharts": "^3.8.0"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",
