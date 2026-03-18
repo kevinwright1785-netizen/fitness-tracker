@@ -30,6 +30,7 @@ type WeightPoint = { date: string; ts: number; weight: number };
 type Profile = {
   current_weight: number | null;
   goal_weight: number | null;
+  weekly_pace: number | null;
 };
 
 const DAY_MS = 86_400_000;
@@ -219,12 +220,15 @@ export function WeightStepsModule() {
   const [loadingChart, setLoadingChart] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
 
+  const [commentary, setCommentary] = useState<string | null>(null);
+  const [loadingCommentary, setLoadingCommentary] = useState(false);
+
   // Load profile
   useEffect(() => {
     if (!user || !supabase) return;
     supabase
       .from("profiles")
-      .select("current_weight, goal_weight")
+      .select("current_weight, goal_weight, weekly_pace")
       .eq("id", user.id)
       .single()
       .then(({ data }: { data: Profile | null }) => {
@@ -277,6 +281,74 @@ export function WeightStepsModule() {
     const startTs = start.getTime();
     setRangePoints(allPoints.filter((p) => p.ts >= startTs));
   }, [allPoints, range]);
+
+  // Fetch AI commentary whenever the range points are ready
+  useEffect(() => {
+    if (rangePoints.length < 2 || !profile) {
+      setCommentary(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const firstPoint = rangePoints[0];
+    const lastPoint = rangePoints[rangePoints.length - 1];
+    const numDays = Math.round((lastPoint.ts - firstPoint.ts) / DAY_MS) || 1;
+
+    const periodChange = lastPoint.weight - firstPoint.weight;
+
+    const avgW =
+      rangePoints.reduce((s, p) => s + p.weight, 0) / rangePoints.length;
+
+    const bestW = Math.min(...rangePoints.map((p) => p.weight));
+    const bestPoint = rangePoints.find((p) => p.weight === bestW);
+    const bestDayStr = bestPoint
+      ? new Date(bestPoint.date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })
+      : null;
+
+    const rangeLabelMap: Record<RangeKey, string> = {
+      "7d": "Last 7 Days",
+      "14d": "Last 14 Days",
+      "1m": "Last Month",
+      "3m": "Last 3 Months",
+      "all": "All Time",
+    };
+
+    setLoadingCommentary(true);
+    setCommentary(null);
+
+    fetch("/api/trend-commentary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        currentWeight: lastPoint.weight,
+        startingWeight: profile.current_weight,
+        goalWeight: profile.goal_weight,
+        periodChange,
+        avgWeight: avgW,
+        bestWeight: bestW,
+        bestDay: bestDayStr,
+        numDays,
+        weeklyPaceGoal: profile.weekly_pace,
+        rangeLabel: rangeLabelMap[range],
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          setCommentary(data.commentary ?? null);
+          setLoadingCommentary(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoadingCommentary(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [rangePoints, profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -540,6 +612,23 @@ export function WeightStepsModule() {
               valueClass="text-emerald-400"
             />
           </div>
+        </Card>
+      )}
+
+      {/* AI Trend Insight */}
+      {rangePoints.length >= 2 && (
+        <Card title="Trend Insight">
+          {loadingCommentary ? (
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <svg className="h-3.5 w-3.5 animate-spin text-emerald-500" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              Analyzing your trend…
+            </div>
+          ) : commentary ? (
+            <p className="text-sm leading-relaxed text-slate-300">{commentary}</p>
+          ) : null}
         </Card>
       )}
     </>
