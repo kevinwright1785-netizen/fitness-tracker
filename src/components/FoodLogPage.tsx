@@ -96,20 +96,6 @@ function getNutrient(food: USDAFood, id: number) {
   return food.foodNutrients.find(n => n.nutrientId === id)?.value ?? 0;
 }
 
-function calcNutrients(food: USDAFood, servings: number) {
-  return {
-    calories: Math.round(getNutrient(food, NUT_ENERGY)  * servings),
-    protein:  +( getNutrient(food, NUT_PROTEIN) * servings).toFixed(1),
-    carbs:    +( getNutrient(food, NUT_CARBS)   * servings).toFixed(1),
-    fat:      +( getNutrient(food, NUT_FAT)     * servings).toFixed(1),
-  };
-}
-
-function servingLabel(food: USDAFood) {
-  if (food.householdServingFullText) return food.householdServingFullText;
-  if (food.servingSize) return `${food.servingSize} ${food.servingSizeUnit ?? "g"}`;
-  return "100 g";
-}
 
 // ─── Streak update ────────────────────────────────────────────────────────────
 
@@ -526,76 +512,73 @@ function ManualEntry({
   );
 }
 
-// ─── Serving Stepper (shared) ─────────────────────────────────────────────────
+// ─── Unified food search ───────────────────────────────────────────────────────
 
-function ServingStepper({
-  food,
-  servings,
-  onChange,
-}: {
-  food: USDAFood;
-  servings: number;
-  onChange: (v: number) => void;
-}) {
-  const [raw, setRaw] = useState(String(servings));
-  // Keep raw in sync when servings changes via +/- buttons
-  useEffect(() => { setRaw(String(servings)); }, [servings]);
+type SearchFood = {
+  id: string;
+  name: string;
+  brand: string;
+  servingLabel: string;
+  cal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  source: "USDA" | "OFF";
+};
 
-  function commitRaw(value: string) {
-    const parsed = parseFloat(value);
-    if (!isNaN(parsed) && parsed > 0) {
-      onChange(+parsed.toFixed(2));
-    } else {
-      setRaw(String(servings)); // revert if invalid
-    }
-  }
-
-  const n = calcNutrients(food, servings);
-  return (
-    <div className="space-y-3">
-      <div className="rounded-2xl bg-slate-800 p-4 space-y-2">
-        <p className="text-xs font-medium text-slate-400">Serving: {servingLabel(food)}</p>
-        <div className="flex items-center gap-4 pr-2">
-          <button
-            onClick={() => onChange(Math.max(0.25, +(servings - 0.25).toFixed(2)))}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white"
-          >−</button>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={raw}
-            onChange={e => {
-              setRaw(e.target.value);
-              const parsed = parseFloat(e.target.value);
-              if (!isNaN(parsed) && parsed > 0) onChange(+parsed.toFixed(2));
-            }}
-            onBlur={e => commitRaw(e.target.value)}
-            className="flex-1 bg-transparent text-center text-2xl font-bold text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-          <button
-            onClick={() => onChange(+(servings + 0.25).toFixed(2))}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-lg font-bold text-white mr-1"
-          >+</button>
-        </div>
-      </div>
-      <div className="grid grid-cols-4 gap-2 text-center">
-        {([
-          { label: "Calories", value: String(n.calories),       color: "text-white"       },
-          { label: "Protein",  value: `${n.protein}g`,          color: "text-sky-400"     },
-          { label: "Carbs",    value: `${n.carbs}g`,            color: "text-yellow-400"  },
-          { label: "Fat",      value: `${n.fat}g`,              color: "text-rose-400"    },
-        ] as const).map(({ label, value, color }) => (
-          <div key={label} className="rounded-xl bg-slate-800 py-2 px-1">
-            <p className="text-[10px] text-slate-500">{label}</p>
-            <p className={`text-sm font-bold ${color}`}>{value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+async function searchOFF(query: string): Promise<SearchFood[]> {
+  const res = await fetch(
+    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&action=process&json=1&page_size=10&sort_by=unique_scans_n&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`
   );
+  const data = await res.json();
+  const products: Record<string, unknown>[] = data.products ?? [];
+  return products
+    .filter(p => p.product_name)
+    .map((p): SearchFood => {
+      const n = (p.nutriments ?? {}) as Record<string, number>;
+      const servingQty = parseFloat(String(p.serving_quantity ?? "")) || 100;
+      const mult = servingQty / 100;
+      return {
+        id: `off-${String(p.code ?? p.product_name)}`,
+        name: String(p.product_name ?? ""),
+        brand: String(p.brands ?? ""),
+        servingLabel: String(p.serving_size ?? `${servingQty}g`),
+        cal: Math.round((n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0) * mult),
+        protein: +((n.proteins_100g ?? n.proteins ?? 0) * mult).toFixed(1),
+        carbs: +((n.carbohydrates_100g ?? n.carbohydrates ?? 0) * mult).toFixed(1),
+        fat: +((n.fat_100g ?? n.fat ?? 0) * mult).toFixed(1),
+        source: "OFF",
+      };
+    });
 }
 
-// ─── USDA Search ──────────────────────────────────────────────────────────────
+async function searchUSDA(query: string): Promise<SearchFood[]> {
+  const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
+  const res = await fetch(
+    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Branded&pageSize=25&api_key=${apiKey}`
+  );
+  const data = await res.json();
+  const foods: USDAFood[] = data.foods ?? [];
+  return foods.map((food): SearchFood => {
+    const mult = (food.servingSize && food.servingSize > 0) ? food.servingSize / 100 : 1;
+    const label = food.householdServingFullText
+      ?? (food.servingSize ? `${food.servingSize} ${food.servingSizeUnit ?? "g"}` : "100g");
+    return {
+      id: `usda-${food.fdcId}`,
+      name: food.description,
+      brand: food.brandName ?? food.brandOwner ?? "",
+      servingLabel: label,
+      cal: Math.round(getNutrient(food, NUT_ENERGY) * mult),
+      protein: +(getNutrient(food, NUT_PROTEIN) * mult).toFixed(1),
+      carbs: +(getNutrient(food, NUT_CARBS) * mult).toFixed(1),
+      fat: +(getNutrient(food, NUT_FAT) * mult).toFixed(1),
+      source: "USDA",
+    };
+  });
+}
+
+
+// ─── Food Search ───────────────────────────────────────────────────────────────
 
 function USDASearch({
   mealLabel,
@@ -606,26 +589,51 @@ function USDASearch({
   onSave: (data: LogPayload) => Promise<void>;
   onBack: () => void;
 }) {
-  const [query,      setQuery]      = useState("");
-  const [results,    setResults]    = useState<USDAFood[]>([]);
-  const [searching,  setSearching]  = useState(false);
-  const [selected,   setSelected]   = useState<USDAFood | null>(null);
-  const [servings,   setServings]   = useState(1);
-  const [saving,     setSaving]     = useState(false);
+  const [query,     setQuery]     = useState("");
+  const [results,   setResults]   = useState<SearchFood[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selected,  setSelected]  = useState<SearchFood | null>(null);
+  const [qty,       setQty]       = useState(1);
+  const [rawQty,    setRawQty]    = useState("1");
+  const [saving,    setSaving]    = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
+  const baseRef = useRef({ cal: 0, protein: 0, carbs: 0, fat: 0 });
+
+  // Scaled nutrition fields
+  const cal     = Math.round(baseRef.current.cal     * qty);
+  const protein = +(baseRef.current.protein * qty).toFixed(1);
+  const carbs   = +(baseRef.current.carbs   * qty).toFixed(1);
+  const fat     = +(baseRef.current.fat     * qty).toFixed(1);
+
+  function selectFood(food: SearchFood) {
+    baseRef.current = { cal: food.cal, protein: food.protein, carbs: food.carbs, fat: food.fat };
+    setSelected(food);
+    setQty(1);
+    setRawQty("1");
+  }
+
+  function changeQty(v: number) {
+    setQty(v);
+    setRawQty(String(v));
+  }
 
   async function doSearch(q: string) {
     if (!q.trim()) { setResults([]); return; }
     setSearching(true);
+    setResults([]);
     try {
-      const res  = await fetch(
-        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&pageSize=25&api_key=${apiKey}`
-      );
-      const data = await res.json();
-      setResults(data.foods ?? []);
+      // Show OFF results immediately
+      const offFoods = await searchOFF(q);
+      setResults(offFoods);
+      // Only fetch USDA if OFF came back thin
+      if (offFoods.length < 5) {
+        const usdaFoods = await searchUSDA(q);
+        const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+        const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+        if (extra.length > 0) setResults([...offFoods, ...extra]);
+      }
     } catch {
-      setResults([]);
+      // leave whatever was already shown
     }
     setSearching(false);
   }
@@ -640,11 +648,8 @@ function USDASearch({
   async function confirmFood() {
     if (!selected) return;
     setSaving(true);
-    const n    = calcNutrients(selected, servings);
-    const name = selected.brandName
-      ? `${selected.description} (${selected.brandName})`
-      : selected.description;
-    await onSave({ food_name: name, ...n, serving_qty: servings });
+    const name = selected.brand ? `${selected.name} (${selected.brand})` : selected.name;
+    await onSave({ food_name: name, calories: cal, protein, carbs, fat, serving_qty: qty });
     setSaving(false);
   }
 
@@ -655,13 +660,51 @@ function USDASearch({
         <div className="flex items-center gap-3">
           <BackButton onClick={() => setSelected(null)} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-white">{selected.description}</p>
-            {selected.brandName && (
-              <p className="truncate text-xs text-slate-400">{selected.brandOwner ?? selected.brandName}</p>
-            )}
+            <p className="truncate text-sm font-bold text-white">{selected.name}</p>
+            {selected.brand && <p className="truncate text-xs text-slate-400">{selected.brand}</p>}
+          </div>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${selected.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
+            {selected.source}
+          </span>
+        </div>
+
+        <div className="rounded-2xl bg-slate-800 px-4 py-3 space-y-2">
+          <p className="text-xs text-slate-400">Serving: {selected.servingLabel}</p>
+          <div className="flex items-center gap-4 pr-2">
+            <button onClick={() => changeQty(Math.max(0.25, +(qty - 0.25).toFixed(2)))}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white">−</button>
+            <input type="number" inputMode="decimal" value={rawQty}
+              onChange={e => {
+                setRawQty(e.target.value);
+                const p = parseFloat(e.target.value);
+                if (!isNaN(p) && p > 0) setQty(+p.toFixed(2));
+              }}
+              onBlur={e => {
+                const p = parseFloat(e.target.value);
+                if (!isNaN(p) && p > 0) changeQty(+p.toFixed(2));
+                else setRawQty(String(qty));
+              }}
+              className="flex-1 bg-transparent text-center text-2xl font-bold text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <button onClick={() => changeQty(+(qty + 0.25).toFixed(2))}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-lg font-bold text-white mr-1">+</button>
           </div>
         </div>
-        <ServingStepper food={selected} servings={servings} onChange={setServings} />
+
+        <div className="grid grid-cols-4 gap-2 text-center">
+          {([
+            { label: "Calories", value: String(cal),       color: "text-white"      },
+            { label: "Protein",  value: `${protein}g`,     color: "text-sky-400"    },
+            { label: "Carbs",    value: `${carbs}g`,       color: "text-yellow-400" },
+            { label: "Fat",      value: `${fat}g`,         color: "text-rose-400"   },
+          ] as const).map(({ label, value, color }) => (
+            <div key={label} className="rounded-xl bg-slate-800 py-2 px-1">
+              <p className="text-[10px] text-slate-500">{label}</p>
+              <p className={`text-sm font-bold ${color}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+
         <button onClick={confirmFood} disabled={saving}
           className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60">
           {saving ? "Saving…" : `Add to ${mealLabel}`}
@@ -686,18 +729,27 @@ function USDASearch({
           onChange={onQueryChange} autoFocus
           className="w-full rounded-2xl border border-slate-700 bg-slate-800 py-3 pl-9 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none" />
       </div>
-      {searching && <p className="text-center text-xs text-slate-400">Searching…</p>}
+      {searching && (
+        <div className="flex items-center justify-center gap-2 py-1">
+          <svg className="h-4 w-4 animate-spin text-emerald-400" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <span className="text-xs text-slate-400">Searching…</span>
+        </div>
+      )}
       <div className="max-h-[40vh] space-y-1 overflow-y-auto">
         {results.map(food => (
-          <button key={food.fdcId} onClick={() => { setSelected(food); setServings(1); }}
+          <button key={food.id} onClick={() => selectFood(food)}
             className="flex min-h-[52px] w-full items-center gap-3 rounded-xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-white">{food.description}</p>
-              {food.brandName && <p className="truncate text-xs text-slate-400">{food.brandName}</p>}
+              <p className="truncate text-sm font-medium text-white">{food.name}</p>
+              {food.brand && <p className="truncate text-xs text-slate-400">{food.brand}</p>}
             </div>
-            <span className="shrink-0 text-sm font-bold text-emerald-400">
-              {Math.round(getNutrient(food, NUT_ENERGY))} cal
+            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${food.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
+              {food.source}
             </span>
+            <span className="shrink-0 text-sm font-bold text-emerald-400">{food.cal} cal</span>
           </button>
         ))}
         {!searching && query && results.length === 0 && (
