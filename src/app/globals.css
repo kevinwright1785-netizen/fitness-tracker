@@ -19,3 +19,13 @@ main {
   padding-bottom: env(safe-area-inset-bottom);
   padding-top: env(safe-area-inset-top);
 }
+
+@keyframes scan {
+  0%   { top: 0%; }
+  50%  { top: calc(100% - 2px); }
+  100% { top: 0%; }
+}
+.animate-scan {
+  position: absolute;
+  animation: scan 2s ease-in-out infinite;
+}
