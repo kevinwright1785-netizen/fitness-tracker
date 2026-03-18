@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/components/AuthContext";
-import { useChat } from "@/components/ChatContext";
+import { useChat, type ChatMessage } from "@/components/ChatContext";
 import { BottomNav } from "@/components/BottomNav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ export default function AskAIPage() {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
 
-    const userMsg: Message = {
+    const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
       content: trimmed,

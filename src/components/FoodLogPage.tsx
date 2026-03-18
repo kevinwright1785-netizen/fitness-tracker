@@ -91,15 +91,17 @@ function yesterdayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function todayRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+function dateRange(isoDate: string) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const start = new Date(y, m - 1, d);
+  const end   = new Date(y, m - 1, d + 1);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function todayLabel() {
-  return new Date().toLocaleDateString("en-US", {
+function formatDateLabel(isoDate: string) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric",
   });
 }
@@ -382,16 +384,20 @@ function MealSection({
   meal,
   entries,
   expanded,
+  isToday,
   onToggle,
   onAddFood,
+  onCopyFrom,
   onDelete,
   onEdit,
 }: {
   meal: typeof MEALS[number];
   entries: FoodEntry[];
   expanded: boolean;
+  isToday: boolean;
   onToggle: () => void;
   onAddFood: () => void;
+  onCopyFrom: () => void;
   onDelete: (id: string) => void;
   onEdit: (entry: FoodEntry) => void;
 }) {
@@ -440,18 +446,35 @@ function MealSection({
             </div>
           )}
 
-          {/* Add food button */}
-          <button
-            onClick={onAddFood}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700 py-3 text-sm font-semibold text-emerald-400 hover:bg-slate-800"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
-              strokeLinecap="round" className="h-4 w-4">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Add Food
-          </button>
+          {/* Add food button — today only */}
+          {isToday && (
+            <button
+              onClick={onAddFood}
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700 py-3 text-sm font-semibold text-emerald-400 hover:bg-slate-800"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                strokeLinecap="round" className="h-4 w-4">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Add Food
+            </button>
+          )}
+
+          {/* Copy from — today only */}
+          {isToday && (
+            <button
+              onClick={onCopyFrom}
+              className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copy from previous day…
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1470,7 +1493,7 @@ function AddFoodSheet({
 
 // ─── Daily Totals ─────────────────────────────────────────────────────────────
 
-function DailyTotals({ entries }: { entries: FoodEntry[] }) {
+function DailyTotals({ entries, isToday }: { entries: FoodEntry[]; isToday: boolean }) {
   const cal   = entries.reduce((s, e) => s + e.calories, 0);
   const prot  = entries.reduce((s, e) => s + (e.protein  ?? 0), 0);
   const carbs = entries.reduce((s, e) => s + (e.carbs    ?? 0), 0);
@@ -1479,7 +1502,7 @@ function DailyTotals({ entries }: { entries: FoodEntry[] }) {
   return (
     <div className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800">
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-        Today&apos;s Total
+        {isToday ? "Today's Total" : "Day's Total"}
       </p>
       <div className="grid grid-cols-4 gap-2 text-center">
         {([
@@ -1793,20 +1816,178 @@ function MealBuilderSheet({
   );
 }
 
+// ─── Copy From Sheet ──────────────────────────────────────────────────────────
+
+function CopyFromSheet({
+  meal,
+  user,
+  onClose,
+  onCopied,
+}: {
+  meal: typeof MEALS[number];
+  user: NonNullable<ReturnType<typeof useAuth>["user"]>;
+  onClose: () => void;
+  onCopied: () => void;
+}) {
+  const today = todayISO();
+  // Default to yesterday
+  const [y, m, d] = today.split("-").map(Number);
+  const yesterday = new Date(y, m - 1, d - 1);
+  const defaultDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+
+  const [pickDate,   setPickDate]   = useState(defaultDate);
+  const [candidates, setCandidates] = useState<FoodEntry[]>([]);
+  const [fetching,   setFetching]   = useState(false);
+  const [fetched,    setFetched]    = useState(false);
+  const [copying,    setCopying]    = useState(false);
+
+  async function fetchForDate(date: string) {
+    if (!date || !supabase) return;
+    setFetching(true);
+    setCandidates([]);
+    setFetched(false);
+    const { start, end } = dateRange(date);
+    const { data } = await supabase
+      .from("food_logs")
+      .select("id, food_name, calories, protein, carbs, fat, meal_type, serving_qty, logged_at")
+      .eq("user_id", user.id)
+      .eq("meal_type", meal.type)
+      .gte("logged_at", start)
+      .lt("logged_at", end)
+      .order("logged_at", { ascending: true });
+    setCandidates((data as FoodEntry[]) ?? []);
+    setFetching(false);
+    setFetched(true);
+  }
+
+  // Load on mount with the default date
+  useEffect(() => { fetchForDate(defaultDate); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCopy() {
+    if (!supabase || candidates.length === 0) return;
+    setCopying(true);
+    const now = new Date().toISOString();
+    const rows = candidates.map(e => ({
+      user_id:     user.id,
+      meal_type:   meal.type,
+      food_name:   e.food_name,
+      calories:    e.calories,
+      protein:     e.protein,
+      carbs:       e.carbs,
+      fat:         e.fat,
+      serving_qty: e.serving_qty,
+      logged_at:   now,
+    }));
+    await supabase.from("food_logs").insert(rows);
+    setCopying(false);
+    onCopied();
+    onClose();
+  }
+
+  const content = (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-base font-bold text-white">Copy {meal.label} from…</h3>
+        <button onClick={onClose} aria-label="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+            strokeLinecap="round" className="h-4 w-4">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {/* Date picker */}
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-slate-400">Select a date</label>
+          <input
+            type="date"
+            value={pickDate}
+            max={defaultDate}
+            onChange={e => {
+              if (!e.target.value) return;
+              setPickDate(e.target.value);
+              fetchForDate(e.target.value);
+            }}
+            className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+          />
+        </div>
+
+        {/* Results */}
+        {fetching && (
+          <p className="py-2 text-center text-sm text-slate-400">Loading…</p>
+        )}
+        {fetched && !fetching && candidates.length === 0 && (
+          <p className="py-2 text-center text-sm text-slate-500">No {meal.label} entries on that day.</p>
+        )}
+        {candidates.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-slate-400">{candidates.length} item{candidates.length !== 1 ? "s" : ""} to copy:</p>
+            <div className="max-h-[30vh] space-y-1 overflow-y-auto rounded-2xl bg-slate-800 p-2">
+              {candidates.map(e => (
+                <div key={e.id} className="flex items-center justify-between rounded-xl px-2 py-1.5">
+                  <span className="flex-1 truncate pr-3 text-sm text-slate-200">{e.food_name}</span>
+                  <span className="shrink-0 text-sm font-semibold text-white">{e.calories} cal</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button onClick={onClose}
+            className="flex-1 rounded-2xl border border-slate-700 py-3.5 text-sm font-semibold text-slate-300 hover:bg-slate-800">
+            Cancel
+          </button>
+          <button
+            onClick={handleCopy}
+            disabled={copying || candidates.length === 0}
+            className="flex-1 rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60 hover:bg-emerald-400"
+          >
+            {copying ? "Copying…" : `Copy ${candidates.length} item${candidates.length !== 1 ? "s" : ""}`}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
+        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
+        {content}
+      </div>
+      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
+        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl">
+          {content}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function FoodLogPage() {
   const { user } = useAuth();
+  const [selectedDate,  setSelectedDate]  = useState<string>(todayISO());
   const [entries,       setEntries]       = useState<FoodEntry[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [expandedMeal,  setExpandedMeal]  = useState<MealType | null>(null);
   const [sheetMeal,     setSheetMeal]     = useState<typeof MEALS[number] | null>(null);
   const [editingEntry,  setEditingEntry]  = useState<FoodEntry | null>(null);
   const [showBuildMeal, setShowBuildMeal] = useState(false);
+  const [copyFromMeal,  setCopyFromMeal]  = useState<typeof MEALS[number] | null>(null);
+
+  const isToday = selectedDate === todayISO();
 
   const loadEntries = useCallback(async () => {
     if (!user || !supabase) return;
-    const { start, end } = todayRange();
+    setLoading(true);
+    const { start, end } = dateRange(selectedDate);
     const { data, error } = await supabase
       .from("food_logs")
       .select("id, food_name, calories, protein, carbs, fat, meal_type, serving_qty, logged_at")
@@ -1817,9 +1998,23 @@ export function FoodLogPage() {
     if (error) console.error("[FoodLog] load error:", error);
     setEntries((data as FoodEntry[]) ?? []);
     setLoading(false);
-  }, [user]);
+  }, [user, selectedDate]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  function prevDay() {
+    const [y, m, d] = selectedDate.split("-").map(Number);
+    const prev = new Date(y, m - 1, d - 1);
+    setSelectedDate(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}-${String(prev.getDate()).padStart(2, "0")}`);
+  }
+
+  function nextDay() {
+    if (isToday) return;
+    const [y, m, d] = selectedDate.split("-").map(Number);
+    const next = new Date(y, m - 1, d + 1);
+    const nextStr = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+    if (nextStr <= todayISO()) setSelectedDate(nextStr);
+  }
 
   async function handleDelete(id: string) {
     if (!supabase) return;
@@ -1853,7 +2048,58 @@ export function FoodLogPage() {
         {/* Header */}
         <header className="pt-2">
           <h1 className="text-xl font-bold text-white">Food Log</h1>
-          <p className="text-xs text-slate-400">{todayLabel()}</p>
+
+          {/* Date navigation */}
+          <div className="mt-2 flex items-center gap-1">
+            <button
+              onClick={prevDay}
+              aria-label="Previous day"
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+
+            {/* Tappable date label — overlaid with a native date input */}
+            <div className="relative flex-1">
+              <div className="flex flex-col items-center pointer-events-none">
+                <span className="text-sm font-semibold text-white">
+                  {isToday ? "Today" : formatDateLabel(selectedDate)}
+                </span>
+                {isToday && (
+                  <span className="text-[10px] text-slate-400">{formatDateLabel(selectedDate)}</span>
+                )}
+              </div>
+              <input
+                type="date"
+                value={selectedDate}
+                max={todayISO()}
+                onChange={e => { if (e.target.value) setSelectedDate(e.target.value); }}
+                className="absolute inset-0 w-full opacity-0 cursor-pointer"
+              />
+            </div>
+
+            <button
+              onClick={nextDay}
+              disabled={isToday}
+              aria-label="Next day"
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Past date indicator */}
+          {!isToday && (
+            <p className="mt-1.5 text-center text-xs font-medium text-amber-400">
+              Viewing past log — add food on today&apos;s date
+            </p>
+          )}
         </header>
 
         {/* Meal sections */}
@@ -1863,24 +2109,28 @@ export function FoodLogPage() {
             meal={meal}
             entries={entries.filter(e => (e.meal_type ?? "snack") === meal.type)}
             expanded={expandedMeal === meal.type}
+            isToday={isToday}
             onToggle={() => setExpandedMeal(prev => prev === meal.type ? null : meal.type)}
             onAddFood={() => { setExpandedMeal(meal.type); setSheetMeal(meal); }}
+            onCopyFrom={() => { setExpandedMeal(meal.type); setCopyFromMeal(meal); }}
             onDelete={handleDelete}
             onEdit={setEditingEntry}
           />
         ))}
 
         {/* Daily totals */}
-        <DailyTotals entries={entries} />
+        <DailyTotals entries={entries} isToday={isToday} />
 
-        {/* Build saved meal */}
-        <button
-          type="button"
-          onClick={() => setShowBuildMeal(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 py-3 text-sm font-medium text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors"
-        >
-          Build a Saved Meal
-        </button>
+        {/* Build saved meal — today only */}
+        {isToday && (
+          <button
+            type="button"
+            onClick={() => setShowBuildMeal(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 py-3 text-sm font-medium text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors"
+          >
+            Build a Saved Meal
+          </button>
+        )}
       </div>
 
       {/* Meal builder sheet */}
@@ -1897,6 +2147,16 @@ export function FoodLogPage() {
           meal={sheetMeal}
           onClose={() => setSheetMeal(null)}
           onSaved={loadEntries}
+        />
+      )}
+
+      {/* Copy from sheet */}
+      {copyFromMeal && user && (
+        <CopyFromSheet
+          meal={copyFromMeal}
+          user={user}
+          onClose={() => setCopyFromMeal(null)}
+          onCopied={loadEntries}
         />
       )}
 
