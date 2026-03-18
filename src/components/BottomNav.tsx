@@ -44,6 +44,15 @@ const tabs = [
       </svg>
     ),
   },
+  {
+    href: "/ask-ai",
+    label: "Ask AI",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M12 3l1.5 5h5l-4 3 1.5 5-4-3-4 3 1.5-5-4-3h5z" />
+      </svg>
+    ),
+  },
 ];
 
 export function BottomNav() {
