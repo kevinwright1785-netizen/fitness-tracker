@@ -309,6 +309,7 @@ export default function ProfilePage() {
           Log Out
         </button>
       </main>
+
       <BottomNav />
     </>
   );

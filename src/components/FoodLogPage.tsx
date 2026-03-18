@@ -43,6 +43,18 @@ type USDAFood = {
 
 type SheetMode = "options" | "manual" | "search" | "barcode" | "saved";
 
+type IngredientMode = "options" | "manual" | "search" | "barcode";
+
+type Ingredient = {
+  localId: string;
+  food_name: string;
+  calories: number;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  serving_qty: number | null;
+};
+
 type LogPayload = {
   food_name: string;
   calories: number;
@@ -1220,8 +1232,11 @@ function SavedMealsView({
   onBack: () => void;
 }) {
   const { user } = useAuth();
-  const [meals,   setMeals]   = useState<SavedMeal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [meals,    setMeals]    = useState<SavedMeal[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [selected, setSelected] = useState<SavedMeal | null>(null);
+  const [qty,      setQty]      = useState(1);
+  const [saving,   setSaving]   = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -1237,6 +1252,90 @@ function SavedMealsView({
     load();
   }, [user]);
 
+  function selectMeal(meal: SavedMeal) {
+    setSelected(meal);
+    setQty(1);
+  }
+
+  function adjustQty(delta: number) {
+    setQty(prev => Math.max(0.5, Math.round((prev + delta) * 2) / 2));
+  }
+
+  async function confirmLog() {
+    if (!selected) return;
+    setSaving(true);
+    await onSave({
+      food_name:   selected.name,
+      calories:    Math.round(selected.calories * qty),
+      protein:     selected.protein != null ? +(selected.protein * qty).toFixed(1) : null,
+      carbs:       selected.carbs   != null ? +(selected.carbs   * qty).toFixed(1) : null,
+      fat:         selected.fat     != null ? +(selected.fat     * qty).toFixed(1) : null,
+      serving_qty: qty,
+    });
+    setSaving(false);
+  }
+
+  // Serving detail view
+  if (selected) {
+    const scaledCal   = Math.round(selected.calories * qty);
+    const scaledProt  = selected.protein != null ? +(selected.protein * qty).toFixed(1) : null;
+    const scaledCarbs = selected.carbs   != null ? +(selected.carbs   * qty).toFixed(1) : null;
+    const scaledFat   = selected.fat     != null ? +(selected.fat     * qty).toFixed(1) : null;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => setSelected(null)} />
+          <h3 className="flex-1 truncate text-base font-bold text-white">{selected.name}</h3>
+        </div>
+
+        {/* Serving stepper */}
+        <div className="rounded-2xl bg-slate-800 px-4 py-4">
+          <p className="mb-3 text-xs text-slate-400">Servings</p>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => adjustQty(-0.5)}
+              disabled={qty <= 0.5}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white disabled:opacity-40 hover:bg-slate-600"
+            >−</button>
+            <span className="text-3xl font-bold text-white">{qty}</span>
+            <button
+              onClick={() => adjustQty(0.5)}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white hover:bg-slate-600"
+            >+</button>
+          </div>
+        </div>
+
+        {/* Scaled nutrition */}
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <div className="rounded-xl bg-slate-800 py-2">
+            <p className="text-[10px] text-slate-500">Cal</p>
+            <p className="text-sm font-bold text-white">{scaledCal}</p>
+          </div>
+          <div className="rounded-xl bg-slate-800 py-2">
+            <p className="text-[10px] text-slate-500">Protein</p>
+            <p className="text-sm font-bold text-sky-400">{scaledProt != null ? `${scaledProt}g` : "—"}</p>
+          </div>
+          <div className="rounded-xl bg-slate-800 py-2">
+            <p className="text-[10px] text-slate-500">Carbs</p>
+            <p className="text-sm font-bold text-yellow-400">{scaledCarbs != null ? `${scaledCarbs}g` : "—"}</p>
+          </div>
+          <div className="rounded-xl bg-slate-800 py-2">
+            <p className="text-[10px] text-slate-500">Fat</p>
+            <p className="text-sm font-bold text-rose-400">{scaledFat != null ? `${scaledFat}g` : "—"}</p>
+          </div>
+        </div>
+
+        <button
+          onClick={confirmLog}
+          disabled={saving}
+          className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60"
+        >
+          {saving ? "Adding…" : `Add to ${mealLabel}`}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
@@ -1245,13 +1344,16 @@ function SavedMealsView({
       </div>
       {loading && <p className="py-4 text-center text-sm text-slate-400">Loading…</p>}
       {!loading && meals.length === 0 && (
-        <p className="py-6 text-center text-sm text-slate-500">No saved meals yet.</p>
+        <div className="py-8 text-center">
+          <p className="text-sm text-slate-500">No saved meals yet.</p>
+          <p className="mt-1 text-xs text-slate-600">Save meals from the Profile tab.</p>
+        </div>
       )}
       <div className="max-h-[45vh] space-y-1 overflow-y-auto">
         {meals.map(meal => (
           <button
             key={meal.id}
-            onClick={() => onSave({ food_name: meal.name, calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, serving_qty: 1 })}
+            onClick={() => selectMeal(meal)}
             className="flex min-h-[56px] w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700"
           >
             <span className="flex-1 truncate text-sm font-medium text-white">{meal.name}</span>
@@ -1274,15 +1376,15 @@ function AddFoodSheet({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { user }  = useAuth();
+  const { user } = useAuth();
   const [mode, setMode] = useState<SheetMode>("options");
 
   async function handleSave(data: LogPayload) {
     if (!user || !supabase) return;
     const { error } = await supabase.from("food_logs").insert({
-      user_id:    user.id,
-      meal_type:  meal.type,
-      logged_at:  new Date().toISOString(),
+      user_id:   user.id,
+      meal_type: meal.type,
+      logged_at: new Date().toISOString(),
       ...data,
     });
     if (error) {
@@ -1295,15 +1397,14 @@ function AddFoodSheet({
   }
 
   const options: { id: SheetMode; icon: string; label: string; sub: string }[] = [
-    { id: "search",  icon: "🔍", label: "Search",       sub: "USDA database"  },
-    { id: "barcode", icon: "📷", label: "Barcode",      sub: "Scan a product" },
-    { id: "manual",  icon: "✏️", label: "Manual Entry", sub: "Enter yourself" },
-    { id: "saved",   icon: "⭐", label: "Saved Meals",  sub: "Quick-add meals" },
+    { id: "search",  icon: "🔍", label: "Search",       sub: "USDA database"   },
+    { id: "barcode", icon: "📷", label: "Barcode",      sub: "Scan a product"  },
+    { id: "manual",  icon: "✏️", label: "Manual Entry", sub: "Enter yourself"  },
+    { id: "saved",   icon: "🍽️", label: "Saved Meals",  sub: "Quick-add meals" },
   ];
 
   const content = (
     <>
-      {/* Header row: title + close button */}
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-base font-bold text-white">Add to {meal.label}</h3>
         <button
@@ -1319,32 +1420,26 @@ function AddFoodSheet({
         </button>
       </div>
 
-      {/* Scrollable body */}
-      <div className="overflow-y-auto pb-2
-        max-h-[calc(75vh-4rem)]
-        md:max-h-[calc(80vh-4rem)]">
+      <div className="overflow-y-auto pb-2 max-h-[calc(75vh-4rem)] md:max-h-[calc(80vh-4rem)]">
         {mode === "options" && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              {options.map(opt => (
-                <button
-                  key={opt.id}
-                  onClick={() => setMode(opt.id)}
-                  className="flex min-h-[88px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-3.5 text-left hover:bg-slate-700"
-                >
-                  <span className="text-2xl leading-none">{opt.icon}</span>
-                  <span className="mt-1 text-sm font-semibold text-white">{opt.label}</span>
-                  <span className="text-[11px] text-slate-400">{opt.sub}</span>
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-2 gap-2">
+            {options.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setMode(opt.id)}
+                className="flex min-h-[88px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-3.5 text-left hover:bg-slate-700"
+              >
+                <span className="text-2xl leading-none">{opt.icon}</span>
+                <span className="mt-1 text-sm font-semibold text-white">{opt.label}</span>
+                <span className="text-[11px] text-slate-400">{opt.sub}</span>
+              </button>
+            ))}
           </div>
         )}
-
-        {mode === "manual"  && <ManualEntry    mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
-        {mode === "search"  && <USDASearch      mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
-        {mode === "barcode" && <BarcodeScanner  mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
-        {mode === "saved"   && <SavedMealsView  mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "manual"  && <ManualEntry   mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "search"  && <USDASearch     mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "barcode" && <BarcodeScanner mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "saved"   && <SavedMealsView mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
       </div>
     </>
   );
@@ -1359,7 +1454,6 @@ function AddFoodSheet({
         className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
         style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
       >
-        {/* Drag handle */}
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
         {content}
       </div>
@@ -1404,6 +1498,301 @@ function DailyTotals({ entries }: { entries: FoodEntry[] }) {
   );
 }
 
+// ─── Add Ingredient Sheet (search/barcode/manual, no DB write) ───────────────
+
+function AddIngredientSheet({
+  onAdd,
+  onClose,
+}: {
+  onAdd: (data: LogPayload) => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<IngredientMode>("options");
+
+  // Wrap onAdd so sub-components see the expected Promise<void> signature
+  async function handleSave(data: LogPayload) {
+    onAdd(data);
+    onClose();
+  }
+
+  const options: { id: IngredientMode; icon: string; label: string; sub: string }[] = [
+    { id: "search",  icon: "🔍", label: "Search",       sub: "USDA database"  },
+    { id: "barcode", icon: "📷", label: "Barcode",      sub: "Scan a product" },
+    { id: "manual",  icon: "✏️", label: "Manual Entry", sub: "Enter yourself" },
+  ];
+
+  const content = (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-base font-bold text-white">Add Ingredient</h3>
+        <button onClick={onClose} aria-label="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+            strokeLinecap="round" className="h-4 w-4">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      <div className="overflow-y-auto pb-2 max-h-[calc(70vh-4rem)] md:max-h-[calc(75vh-4rem)]">
+        {mode === "options" && (
+          <div className="grid grid-cols-3 gap-2">
+            {options.map(opt => (
+              <button key={opt.id} onClick={() => setMode(opt.id)}
+                className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
+                <span className="text-2xl leading-none">{opt.icon}</span>
+                <span className="mt-1 text-xs font-semibold text-white">{opt.label}</span>
+                <span className="text-[10px] text-slate-400">{opt.sub}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === "manual"  && <ManualEntry   mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "search"  && <USDASearch     mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "barcode" && <BarcodeScanner mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-60 bg-slate-950/70" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-[70] mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
+        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
+        {content}
+      </div>
+      <div className="fixed inset-0 z-[70] hidden items-center justify-center md:flex">
+        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+          {content}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Meal Builder Sheet ───────────────────────────────────────────────────────
+
+function MealBuilderSheet({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { user } = useAuth();
+  const [mealName,         setMealName]         = useState("");
+  const [ingredients,      setIngredients]      = useState<Ingredient[]>([]);
+  const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [saving,           setSaving]           = useState(false);
+  const [saveError,        setSaveError]        = useState<string | null>(null);
+  const [saveSuccess,      setSaveSuccess]      = useState(false);
+
+  function addIngredient(data: LogPayload) {
+    setIngredients(prev => [...prev, {
+      localId:    `${Date.now()}-${Math.random()}`,
+      food_name:  data.food_name,
+      calories:   data.calories,
+      protein:    data.protein,
+      carbs:      data.carbs,
+      fat:        data.fat,
+      serving_qty: data.serving_qty,
+    }]);
+  }
+
+  function removeIngredient(localId: string) {
+    setIngredients(prev => prev.filter(i => i.localId !== localId));
+  }
+
+  const totalCal   = ingredients.reduce((s, i) => s + i.calories,        0);
+  const totalProt  = ingredients.reduce((s, i) => s + (i.protein  ?? 0), 0);
+  const totalCarbs = ingredients.reduce((s, i) => s + (i.carbs    ?? 0), 0);
+  const totalFat   = ingredients.reduce((s, i) => s + (i.fat      ?? 0), 0);
+
+  async function handleSave() {
+    setSaveError(null);
+    setSaveSuccess(false);
+
+    if (!supabase) {
+      setSaveError("Supabase client not available.");
+      return;
+    }
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    if (authError || !authUser) {
+      console.error("[MealBuilder] Auth error:", authError);
+      setSaveError("You must be logged in to save meals.");
+      return;
+    }
+    if (!mealName.trim()) {
+      setSaveError("Please enter a meal name.");
+      return;
+    }
+    if (ingredients.length === 0) {
+      setSaveError("Add at least one ingredient.");
+      return;
+    }
+
+    setSaving(true);
+    const payload = {
+      user_id:  authUser.id,
+      name:     mealName.trim(),
+      calories: totalCal,
+      protein:  totalProt  > 0 ? +totalProt.toFixed(1)  : null,
+      carbs:    totalCarbs > 0 ? +totalCarbs.toFixed(1) : null,
+      fat:      totalFat   > 0 ? +totalFat.toFixed(1)   : null,
+    };
+
+    console.log("[MealBuilder] Saving payload:", JSON.stringify(payload, null, 2));
+
+    const { data, error } = await supabase.from("saved_meals").insert(payload).select();
+
+    console.log("[MealBuilder] Supabase response — data:", data, "error:", error);
+
+    setSaving(false);
+
+    if (error) {
+      setSaveError(error.message || "Failed to save meal. Please try again.");
+      return;
+    }
+
+    setSaveSuccess(true);
+    setTimeout(() => {
+      onSaved();
+      onClose();
+    }, 800);
+  }
+
+  const content = (
+    <>
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-base font-bold text-white">Build a Saved Meal</h3>
+        <button onClick={onClose} aria-label="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+            strokeLinecap="round" className="h-4 w-4">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Meal name */}
+      <input
+        type="text"
+        placeholder="Meal name *"
+        value={mealName}
+        onChange={e => setMealName(e.target.value)}
+        className="mb-4 w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+      />
+
+      {/* Scrollable ingredient list + add button */}
+      <div className="flex-1 overflow-y-auto pb-2 max-h-[calc(75vh-14rem)] md:max-h-[calc(80vh-14rem)]">
+        {ingredients.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-500">
+            No ingredients yet. Add one below.
+          </p>
+        ) : (
+          <div className="mb-3 space-y-1.5">
+            {ingredients.map(ing => (
+              <div key={ing.localId}
+                className="flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="truncate text-sm font-medium text-white">{ing.food_name}</p>
+                  <p className="text-xs text-slate-400">
+                    {ing.calories} cal
+                    {ing.serving_qty && ing.serving_qty !== 1 ? ` · ×${ing.serving_qty}` : ""}
+                  </p>
+                </div>
+                <button type="button" onClick={() => removeIngredient(ing.localId)}
+                  aria-label="Remove ingredient"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-700 hover:text-rose-400">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                    strokeLinecap="round" className="h-4 w-4">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button type="button" onClick={() => setShowAddIngredient(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 py-3 text-sm font-medium text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors">
+          + Add Ingredient
+        </button>
+      </div>
+
+      {/* Running totals + save */}
+      <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">
+        {ingredients.length > 0 && (
+          <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-800 p-3 text-center">
+            <div>
+              <p className="text-[10px] text-slate-500">Cal</p>
+              <p className="text-sm font-bold text-white">{totalCal}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500">Protein</p>
+              <p className="text-sm font-bold text-sky-400">{totalProt.toFixed(0)}g</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500">Carbs</p>
+              <p className="text-sm font-bold text-yellow-400">{totalCarbs.toFixed(0)}g</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500">Fat</p>
+              <p className="text-sm font-bold text-rose-400">{totalFat.toFixed(0)}g</p>
+            </div>
+          </div>
+        )}
+        {saveError && (
+          <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-center text-sm text-rose-400">
+            {saveError}
+          </p>
+        )}
+        {saveSuccess && (
+          <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-sm text-emerald-400">
+            Meal saved!
+          </p>
+        )}
+        <button type="button" onClick={handleSave}
+          disabled={saving || ingredients.length === 0 || !mealName.trim()}
+          className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60 hover:bg-emerald-400">
+          {saving
+            ? "Saving…"
+            : saveSuccess
+            ? "Saved!"
+            : ingredients.length === 0
+            ? "Add ingredients above"
+            : `Save Meal (${ingredients.length} ingredient${ingredients.length !== 1 ? "s" : ""})`}
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
+        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
+        {content}
+      </div>
+      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
+        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+          {content}
+        </div>
+      </div>
+
+      {/* Add ingredient sub-sheet — floats above builder */}
+      {showAddIngredient && (
+        <AddIngredientSheet
+          onAdd={addIngredient}
+          onClose={() => setShowAddIngredient(false)}
+        />
+      )}
+    </>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function FoodLogPage() {
@@ -1413,6 +1802,7 @@ export function FoodLogPage() {
   const [expandedMeal,  setExpandedMeal]  = useState<MealType | null>(null);
   const [sheetMeal,     setSheetMeal]     = useState<typeof MEALS[number] | null>(null);
   const [editingEntry,  setEditingEntry]  = useState<FoodEntry | null>(null);
+  const [showBuildMeal, setShowBuildMeal] = useState(false);
 
   const loadEntries = useCallback(async () => {
     if (!user || !supabase) return;
@@ -1482,7 +1872,24 @@ export function FoodLogPage() {
 
         {/* Daily totals */}
         <DailyTotals entries={entries} />
+
+        {/* Build saved meal */}
+        <button
+          type="button"
+          onClick={() => setShowBuildMeal(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 py-3 text-sm font-medium text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors"
+        >
+          Build a Saved Meal
+        </button>
       </div>
+
+      {/* Meal builder sheet */}
+      {showBuildMeal && (
+        <MealBuilderSheet
+          onClose={() => setShowBuildMeal(false)}
+          onSaved={() => {}}
+        />
+      )}
 
       {/* Add food sheet */}
       {sheetMeal && (
