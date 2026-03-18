@@ -20,8 +20,8 @@ type RangeKey = "7d" | "14d" | "1m" | "3m" | "all";
 const rangeOptions: { key: RangeKey; label: string }[] = [
   { key: "7d", label: "7 Days" },
   { key: "14d", label: "14 Days" },
-  { key: "1m", label: "1 Month" },
-  { key: "3m", label: "3 Months" },
+  { key: "1m", label: "30 Days" },
+  { key: "3m", label: "90 Days" },
   { key: "all", label: "All Time" },
 ];
 
@@ -293,7 +293,10 @@ export function WeightStepsModule() {
 
     const firstPoint = rangePoints[0];
     const lastPoint = rangePoints[rangePoints.length - 1];
-    const numDays = Math.round((lastPoint.ts - firstPoint.ts) / DAY_MS) || 1;
+    const fixedDaysMap: Record<RangeKey, number | null> = {
+      "7d": 7, "14d": 14, "1m": 30, "3m": 90, "all": null,
+    };
+    const numDays = fixedDaysMap[range] ?? (Math.round((lastPoint.ts - firstPoint.ts) / DAY_MS) || 1);
 
     const periodChange = lastPoint.weight - firstPoint.weight;
 
@@ -312,8 +315,8 @@ export function WeightStepsModule() {
     const rangeLabelMap: Record<RangeKey, string> = {
       "7d": "Last 7 Days",
       "14d": "Last 14 Days",
-      "1m": "Last Month",
-      "3m": "Last 3 Months",
+      "1m": "Last 30 Days",
+      "3m": "Last 90 Days",
       "all": "All Time",
     };
 
@@ -562,13 +565,7 @@ export function WeightStepsModule() {
                 dataKey="weight"
                 stroke={lineColor}
                 strokeWidth={2.5}
-                dot={
-                  rangePoints.length <= 30 ? (
-                    <Dot r={3} fill={lineColor} strokeWidth={0} />
-                  ) : (
-                    false
-                  )
-                }
+                dot={<Dot r={3} fill={lineColor} strokeWidth={0} />}
                 activeDot={{ r: 5, fill: lineColor, strokeWidth: 0 }}
               />
             </LineChart>
