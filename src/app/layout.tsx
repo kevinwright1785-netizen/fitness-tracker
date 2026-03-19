@@ -5,7 +5,13 @@ import { ChatProvider } from "@/components/ChatContext";
 
 export const metadata: Metadata = {
   title: "TrackRight",
-  description: "Track food, macros, weight, and steps with TrackRight."
+  description: "Track food, macros, weight, and steps with TrackRight.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "TrackRight",
+  },
 };
 
 export default function RootLayout({
