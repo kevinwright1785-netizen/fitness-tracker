@@ -22,6 +22,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <link rel="apple-touch-startup-image" href="/splash.png" />
+      </head>
       <body className="safe-iphone bg-slate-950 text-slate-50">
         <AuthProvider>
           <ChatProvider>
