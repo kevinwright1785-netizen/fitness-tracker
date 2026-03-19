@@ -2258,6 +2258,12 @@ function MealsAndMoreSheet({
     setLoadingFavs(false);
   }
 
+  async function deleteFavorite(id: string) {
+    if (!supabase) return;
+    const { error } = await supabase.from("favorites").delete().eq("id", id);
+    if (!error) setFavorites(prev => prev.filter(f => f.id !== id));
+  }
+
   const content = (
     <>
       <div className="mb-4 flex items-center justify-between">
@@ -2283,13 +2289,12 @@ function MealsAndMoreSheet({
       {view === "menu" && (
         <div className="space-y-2">
           {([
-            { icon: "🍳", label: "Build a Saved Meal", sub: "Create a reusable meal", action: () => { onClose(); onBuildMeal(); } },
-            { icon: "🍽️", label: "View Saved Meals",   sub: "Browse your saved meals",  action: openSavedMeals },
-            { icon: "❤️",  label: "View Favorites",     sub: "Browse favorited foods",   action: openFavorites  },
-          ]).map(({ icon, label, sub, action }) => (
+            { label: "Build a Saved Meal", sub: "Create a reusable meal",   action: () => { onClose(); onBuildMeal(); } },
+            { label: "View Saved Meals",   sub: "Browse your saved meals",  action: openSavedMeals },
+            { label: "View Favorites",     sub: "Browse favorited foods",   action: openFavorites  },
+          ]).map(({ label, sub, action }) => (
             <button key={label} onClick={action}
-              className="flex min-h-[64px] w-full items-center gap-4 rounded-2xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700 transition-colors">
-              <span className="text-2xl leading-none">{icon}</span>
+              className="flex min-h-[64px] w-full items-center rounded-2xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700 transition-colors">
               <div>
                 <p className="text-sm font-semibold text-white">{label}</p>
                 <p className="text-xs text-slate-400">{sub}</p>
@@ -2321,9 +2326,22 @@ function MealsAndMoreSheet({
             <p className="py-8 text-center text-sm text-slate-500">No favorites yet.</p>
           )}
           {favorites.map(f => (
-            <div key={f.id} className="flex min-h-[52px] items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
+            <div key={f.id} className="flex min-h-[52px] items-center gap-2 rounded-xl bg-slate-800 px-4 py-3">
               <span className="flex-1 truncate text-sm font-medium text-white">{f.food_name}</span>
-              <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{f.calories} cal</span>
+              <span className="shrink-0 text-sm font-bold text-emerald-400">{f.calories} cal</span>
+              <button
+                onClick={() => deleteFavorite(f.id)}
+                aria-label={`Remove ${f.food_name} from favorites`}
+                className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                  strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+              </button>
             </div>
           ))}
         </div>

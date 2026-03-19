@@ -46,7 +46,14 @@ export async function POST(req: NextRequest) {
       weeklyPaceGoal != null ? `User's weekly pace goal: lose ${weeklyPaceGoal} lbs/week` : null,
     ].filter((l): l is string => l != null);
 
-    const prompt = `You are a supportive fitness coach giving a brief trend update to someone tracking their weight loss. Based on this data, write 2-3 sentences of commentary. Be conversational, encouraging but honest. If they're ahead of pace, celebrate it. If they're behind, encourage them without being harsh. If goal weight is provided, mention how close they are or estimate weeks remaining. Never use bullet points or lists — write natural flowing sentences only.
+    const prompt = `You are a supportive fitness coach giving a brief trend update to someone tracking their weight loss. Based on this data, write 2-3 sentences of commentary. Be conversational, encouraging but honest.
+
+Rules:
+- Always open by referencing the specific time period by name (e.g. "Over the last 7 days…" or "Looking at the last 30 days…"). Never write a generic opening.
+- All stats you mention (change, average, best day) must come from this specific time period, not all-time data.
+- If they're ahead of their weekly pace goal, celebrate it. If behind, encourage without being harsh.
+- If goal weight is provided, mention how close they are or estimate weeks remaining at their current pace.
+- Never use bullet points or lists — write natural flowing sentences only.
 
 Data:
 ${lines.join("\n")}`;

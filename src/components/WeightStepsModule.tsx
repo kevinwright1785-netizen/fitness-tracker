@@ -222,6 +222,7 @@ export function WeightStepsModule() {
 
   const [commentary, setCommentary] = useState<string | null>(null);
   const [loadingCommentary, setLoadingCommentary] = useState(false);
+  const [insightReady, setInsightReady] = useState(false);
 
   // Load profile
   useEffect(() => {
@@ -282,14 +283,15 @@ export function WeightStepsModule() {
     setRangePoints(allPoints.filter((p) => p.ts >= startTs));
   }, [allPoints, range]);
 
-  // Fetch AI commentary whenever the range points are ready
+  // Reset insight when the range changes
   useEffect(() => {
-    if (rangePoints.length < 2 || !profile) {
-      setCommentary(null);
-      return;
-    }
+    setCommentary(null);
+    setInsightReady(false);
+    setLoadingCommentary(false);
+  }, [range]);
 
-    let cancelled = false;
+  async function generateInsight() {
+    if (rangePoints.length < 2 || !profile) return;
 
     const firstPoint = rangePoints[0];
     const lastPoint = rangePoints[rangePoints.length - 1];
@@ -299,17 +301,11 @@ export function WeightStepsModule() {
     const numDays = fixedDaysMap[range] ?? (Math.round((lastPoint.ts - firstPoint.ts) / DAY_MS) || 1);
 
     const periodChange = lastPoint.weight - firstPoint.weight;
-
-    const avgW =
-      rangePoints.reduce((s, p) => s + p.weight, 0) / rangePoints.length;
-
+    const avgW = rangePoints.reduce((s, p) => s + p.weight, 0) / rangePoints.length;
     const bestW = Math.min(...rangePoints.map((p) => p.weight));
     const bestPoint = rangePoints.find((p) => p.weight === bestW);
     const bestDayStr = bestPoint
-      ? new Date(bestPoint.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        })
+      ? new Date(bestPoint.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
       : null;
 
     const rangeLabelMap: Record<RangeKey, string> = {
@@ -322,36 +318,33 @@ export function WeightStepsModule() {
 
     setLoadingCommentary(true);
     setCommentary(null);
+    setInsightReady(true);
 
-    fetch("/api/trend-commentary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        currentWeight: lastPoint.weight,
-        startingWeight: profile.current_weight,
-        goalWeight: profile.goal_weight,
-        periodChange,
-        avgWeight: avgW,
-        bestWeight: bestW,
-        bestDay: bestDayStr,
-        numDays,
-        weeklyPaceGoal: profile.weekly_pace,
-        rangeLabel: rangeLabelMap[range],
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) {
-          setCommentary(data.commentary ?? null);
-          setLoadingCommentary(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setLoadingCommentary(false);
+    try {
+      const res = await fetch("/api/trend-commentary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentWeight: lastPoint.weight,
+          startingWeight: profile.current_weight,
+          goalWeight: profile.goal_weight,
+          periodChange,
+          avgWeight: avgW,
+          bestWeight: bestW,
+          bestDay: bestDayStr,
+          numDays,
+          weeklyPaceGoal: profile.weekly_pace,
+          rangeLabel: rangeLabelMap[range],
+        }),
       });
-
-    return () => { cancelled = true; };
-  }, [rangePoints, profile]); // eslint-disable-line react-hooks/exhaustive-deps
+      const data = await res.json();
+      setCommentary(data.commentary ?? null);
+    } catch {
+      // leave commentary null
+    } finally {
+      setLoadingCommentary(false);
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -615,7 +608,20 @@ export function WeightStepsModule() {
       {/* AI Trend Insight */}
       {rangePoints.length >= 2 && (
         <Card title="Trend Insight">
-          {loadingCommentary ? (
+          {!insightReady ? (
+            /* Not yet requested — show generate button */
+            <button
+              onClick={generateInsight}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500/10 py-3 text-sm font-semibold text-emerald-400 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20 transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M12 3l1.5 5h5l-4 3 1.5 5-4-3-4 3 1.5-5-4-3h5z" />
+              </svg>
+              Generate Insight
+            </button>
+          ) : loadingCommentary ? (
+            /* Loading */
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <svg className="h-3.5 w-3.5 animate-spin text-emerald-500" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -623,9 +629,23 @@ export function WeightStepsModule() {
               </svg>
               Analyzing your trend…
             </div>
-          ) : commentary ? (
-            <p className="text-sm leading-relaxed text-slate-300">{commentary}</p>
-          ) : null}
+          ) : (
+            /* Generated */
+            <div className="space-y-3">
+              <p className="text-sm leading-relaxed text-slate-300">{commentary}</p>
+              <button
+                onClick={generateInsight}
+                className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                  strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+                Regenerate
+              </button>
+            </div>
+          )}
         </Card>
       )}
     </>
