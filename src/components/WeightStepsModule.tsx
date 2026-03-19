@@ -4,6 +4,8 @@ import { useState, useEffect, FormEvent } from "react";
 import { Card } from "./Card";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./AuthContext";
+import { calculateAge, calculateTDEE, calculateMacros } from "@/lib/goals";
+import type { Gender, ActivityLevel, GoalType } from "@/lib/goals";
 import {
   LineChart,
   Line,
@@ -31,6 +33,12 @@ type Profile = {
   current_weight: number | null;
   goal_weight: number | null;
   weekly_pace: number | null;
+  dob: string | null;
+  height_ft: number | null;
+  height_in: number | null;
+  gender: string | null;
+  activity_level: string | null;
+  goal: string | null;
 };
 
 const DAY_MS = 86_400_000;
@@ -229,7 +237,7 @@ export function WeightStepsModule() {
     if (!user || !supabase) return;
     supabase
       .from("profiles")
-      .select("current_weight, goal_weight, weekly_pace")
+      .select("current_weight, goal_weight, weekly_pace, dob, height_ft, height_in, gender, activity_level, goal")
       .eq("id", user.id)
       .single()
       .then(({ data }: { data: Profile | null }) => {
@@ -352,9 +360,11 @@ export function WeightStepsModule() {
     setSaving(true);
     setSavedMessage(null);
 
+    const newWeight = Number(weightInput);
+
     const { error } = await supabase.from("weight_logs").insert({
       user_id: user.id,
-      weight_lbs: Number(weightInput),
+      weight_lbs: newWeight,
       logged_at: new Date().toISOString(),
     });
 
@@ -362,6 +372,36 @@ export function WeightStepsModule() {
       setSavedMessage(`Saved — ${weightInput} lbs`);
       setReloadToken((t) => t + 1);
       setTimeout(() => setSavedMessage(null), 3000);
+
+      // Recalculate daily targets with new weight if we have enough profile data
+      if (profile) {
+        const heightCm =
+          profile.height_ft != null && profile.height_in != null
+            ? (profile.height_ft * 12 + profile.height_in) * 2.54
+            : null;
+        const age = profile.dob ? calculateAge(profile.dob) : null;
+        const gender = (profile.gender ?? null) as Gender | null;
+        const activity = (profile.activity_level ?? null) as ActivityLevel | null;
+        const goal = (profile.goal ?? "lose") as GoalType;
+
+        if (heightCm && age && gender && activity) {
+          const newCalories = calculateTDEE({
+            gender,
+            weightLbs: newWeight,
+            heightCm,
+            age,
+            activity,
+            goal,
+            weeklyPaceLbs: profile.weekly_pace,
+          });
+          const { protein, carbs, fat } = calculateMacros(newCalories, goal);
+
+          await supabase
+            .from("profiles")
+            .update({ daily_calories: newCalories, daily_protein: protein, daily_carbs: carbs, daily_fat: fat })
+            .eq("id", user.id);
+        }
+      }
     }
     setSaving(false);
   }
