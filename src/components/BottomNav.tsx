@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const HIDE_ON: string[] = ["/login", "/signup", "/onboarding"];
+
 const tabs = [
   {
     href: "/",
@@ -58,25 +60,32 @@ const tabs = [
 export function BottomNav() {
   const pathname = usePathname();
 
+  if (HIDE_ON.includes(pathname)) return null;
+
   return (
-    <nav className="mt-auto flex gap-1 rounded-3xl bg-slate-900/80 p-2 ring-1 ring-slate-800">
-      {tabs.map(({ href, label, icon }) => {
-        const active = pathname === href;
-        return (
-          <Link
-            key={href}
-            href={href}
-            className={`flex flex-1 flex-col items-center gap-0.5 rounded-2xl px-2 py-2 text-[10px] font-medium transition-colors ${
-              active
-                ? "bg-emerald-500 text-slate-950"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {icon}
-            {label}
-          </Link>
-        );
-      })}
-    </nav>
+    <div
+      className="fixed bottom-0 left-0 right-0 z-30 flex justify-center bg-slate-950/95 px-4 backdrop-blur-sm"
+      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+    >
+      <nav className="flex w-full max-w-md gap-1 rounded-3xl bg-slate-900/80 p-2 ring-1 ring-slate-800">
+        {tabs.map(({ href, label, icon }) => {
+          const active = pathname === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex flex-1 flex-col items-center gap-0.5 rounded-2xl px-2 py-2 text-[10px] font-medium transition-colors ${
+                active
+                  ? "bg-emerald-500 text-slate-950"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {icon}
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
   );
 }

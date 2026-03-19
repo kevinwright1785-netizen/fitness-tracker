@@ -4,7 +4,6 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/components/AuthContext";
-import { BottomNav } from "@/components/BottomNav";
 import { calculateMacros, calculateTDEE, GoalType, ActivityLevel, calculateAge } from "@/lib/goals";
 
 export default function ProfilePage() {
@@ -310,7 +309,6 @@ export default function ProfilePage() {
         </button>
       </main>
 
-      <BottomNav />
     </>
   );
 }

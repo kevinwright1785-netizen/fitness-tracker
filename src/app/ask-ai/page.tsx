@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/components/AuthContext";
 import { useChat, type ChatMessage } from "@/components/ChatContext";
-import { BottomNav } from "@/components/BottomNav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -189,7 +188,7 @@ export default function AskAIPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex min-h-svh flex-col bg-slate-950 px-4 pt-4 pb-4">
+    <div className="flex min-h-svh flex-col bg-slate-950 px-4 pt-4 pb-24">
       {/* Header */}
       <header className="mb-3 flex items-center gap-2 pt-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20">
@@ -262,10 +261,6 @@ export default function AskAIPage() {
         </button>
       </form>
 
-      {/* Bottom nav */}
-      <div className="pt-3">
-        <BottomNav />
-      </div>
     </div>
   );
 }
