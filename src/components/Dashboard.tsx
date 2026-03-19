@@ -214,8 +214,25 @@ function Fireworks() {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
+// Show greeting if it hasn't been shown in the last 30 minutes.
+// localStorage persists across PWA hard-closes on iPhone (unlike sessionStorage
+// which iOS also sometimes persists). The timestamp lets us show the greeting
+// on every genuine fresh launch without repeating it during tab-switching.
+const GREETING_TIMEOUT_MS = 30 * 60 * 1000;
+
+function shouldShowGreeting(): boolean {
+  if (typeof window === "undefined") return false;
+  const ts = localStorage.getItem("greetingShownAt");
+  if (!ts) return true;
+  return Date.now() - Number(ts) > GREETING_TIMEOUT_MS;
+}
+
+function markGreetingShown() {
+  localStorage.setItem("greetingShownAt", String(Date.now()));
+}
+
 export function Dashboard() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
   // profile & data
@@ -223,11 +240,8 @@ export function Dashboard() {
   const [totals, setTotals] = useState<Totals>({ calories: 0, protein: 0, carbs: 0, fat: 0 });
   const [latestWeightLbs, setLatestWeightLbs] = useState<number | null>(null);
   const [stepsToday, setStepsToday] = useState(0);
-  // UI state — only show splash once per browser session
-  const [showSplash, setShowSplash] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !sessionStorage.getItem("splashShown");
-  });
+  // Show greeting on every fresh app launch (>30 min since last shown)
+  const [showSplash, setShowSplash] = useState(() => shouldShowGreeting());
   const [splashFading, setSplashFading] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [completionResult, setCompletionResult] = useState<CompletionResult | null>(null);
@@ -239,8 +253,11 @@ export function Dashboard() {
   // ── Load all data ──────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Wait for auth to resolve — don't suppress the splash while still loading
+    if (authLoading) return;
+
     if (!user || !supabase) {
-      sessionStorage.setItem("splashShown", "1");
+      markGreetingShown();
       setShowSplash(false);
       return;
     }
@@ -331,8 +348,8 @@ export function Dashboard() {
 
       if (stepsRes.data?.[0]) setStepsToday(stepsRes.data[0].steps ?? 0);
 
-      // Splash fade — mark as shown so navigating back doesn't re-trigger
-      sessionStorage.setItem("splashShown", "1");
+      // Splash fade — record timestamp so tab-switching doesn't re-trigger
+      markGreetingShown();
       splashTimer.current = setTimeout(() => {
         setSplashFading(true);
         setTimeout(() => setShowSplash(false), 500);
@@ -343,7 +360,7 @@ export function Dashboard() {
     return () => {
       if (splashTimer.current) clearTimeout(splashTimer.current);
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   // ── Streak update on food log ──────────────────────────────────────────────
 

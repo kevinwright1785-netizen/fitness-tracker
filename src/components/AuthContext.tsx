@@ -52,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       const nextUser = session?.user ?? null;
       if (!nextUser) {
-        // Clear greeting flag so it shows again on the next login
-        sessionStorage.removeItem("splashShown");
+        // Clear greeting timestamp so it shows again on the next login
+        localStorage.removeItem("greetingShownAt");
         setUser(null);
         setOnboardingComplete(false);
       } else {
