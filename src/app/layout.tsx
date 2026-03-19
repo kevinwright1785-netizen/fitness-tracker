@@ -24,6 +24,9 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        {/* iPhone 16 Pro Max — exact pixel match required for iOS to use it */}
+        <link rel="apple-touch-startup-image" href="/apple-splash-1290-2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+        {/* Generic fallback for all other devices */}
         <link rel="apple-touch-startup-image" href="/splash.png" />
       </head>
       <body className="safe-iphone bg-slate-950 text-slate-50">
