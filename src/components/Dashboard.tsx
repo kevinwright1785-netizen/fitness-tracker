@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import confetti from "canvas-confetti";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./AuthContext";
@@ -215,6 +216,7 @@ function Fireworks() {
 
 export function Dashboard() {
   const { user } = useAuth();
+  const router = useRouter();
 
   // profile & data
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -579,8 +581,13 @@ export function Dashboard() {
           </div>
         </header>
 
-        {/* B) Calorie ring */}
-        <section className="rounded-3xl bg-slate-900 px-4 py-6 ring-1 ring-slate-800">
+        {/* B) Calorie ring — taps to Log Food */}
+        <section
+          className="rounded-3xl bg-slate-900 px-4 py-6 ring-1 ring-slate-800 cursor-pointer hover:ring-slate-600 transition-colors"
+          onClick={() => router.push("/log")}
+          role="button"
+          aria-label="Go to food log"
+        >
           <CalorieRing
             consumed={totals.calories}
             goal={baseCalories}
@@ -639,9 +646,12 @@ export function Dashboard() {
           })}
         </section>
 
-        {/* D) Today's stats row */}
+        {/* D) Today's stats row — both cards tap to Progress */}
         <section className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800">
+          <button
+            onClick={() => router.push("/progress")}
+            className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800 text-left hover:ring-slate-600 transition-colors"
+          >
             <p className="text-xs font-medium text-slate-400">Current Weight</p>
             <p className="mt-1 text-2xl font-bold text-white">
               {displayWeight != null ? displayWeight.toFixed(1) : "—"}
@@ -649,8 +659,11 @@ export function Dashboard() {
                 <span className="ml-1 text-sm font-normal text-slate-400">lbs</span>
               )}
             </p>
-          </div>
-          <div className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800">
+          </button>
+          <button
+            onClick={() => router.push("/progress")}
+            className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800 text-left hover:ring-slate-600 transition-colors"
+          >
             <p className="text-xs font-medium text-slate-400">Total Lost</p>
             <p className="mt-1 text-2xl font-bold text-white">
               {weightLost !== null ? Math.abs(weightLost).toFixed(1) : "—"}
@@ -664,7 +677,7 @@ export function Dashboard() {
             {weightLost === 0 && (
               <p className="mt-0.5 text-[10px] text-slate-500">start logging to track</p>
             )}
-          </div>
+          </button>
         </section>
 
         {/* E) Exercise calories */}

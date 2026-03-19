@@ -29,6 +29,16 @@ type SavedMeal = {
   fat: number | null;
 };
 
+type Favorite = {
+  id: string;
+  food_name: string;
+  calories: number;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  serving_qty: number | null;
+};
+
 type USDAFood = {
   fdcId: number;
   description: string;
@@ -43,7 +53,7 @@ type USDAFood = {
 
 type SheetMode = "options" | "manual" | "search" | "barcode" | "saved";
 
-type IngredientMode = "options" | "manual" | "search" | "barcode";
+type IngredientMode = "options" | "manual" | "search" | "barcode" | "favorites";
 
 type Ingredient = {
   localId: string;
@@ -148,12 +158,16 @@ function BackButton({ onClick }: { onClick: () => void }) {
 
 function EditFoodModal({
   entry,
+  isFavorited,
   onSave,
   onClose,
+  onToggleFavorite,
 }: {
   entry: FoodEntry;
+  isFavorited: boolean;
   onSave: (id: string, data: LogPayload) => Promise<void>;
   onClose: () => void;
+  onToggleFavorite: () => void;
 }) {
   // Derive per-1-serving base values so the stepper always scales correctly.
   // If serving_qty was saved we can back-calculate; otherwise treat stored values as 1×.
@@ -167,15 +181,29 @@ function EditFoodModal({
 
   const [name,     setName]     = useState(entry.food_name);
   const [qty,      setQty]      = useState(savedQty);
+  const [rawQty,   setRawQty]   = useState(String(savedQty));
   const [calories, setCalories] = useState(String(entry.calories));
   const [protein,  setProtein]  = useState(entry.protein  != null ? String(entry.protein)  : "");
   const [carbs,    setCarbs]    = useState(entry.carbs    != null ? String(entry.carbs)    : "");
   const [fat,      setFat]      = useState(entry.fat      != null ? String(entry.fat)      : "");
   const [saving,   setSaving]   = useState(false);
+  const [localFav, setLocalFav] = useState(isFavorited);
+  const [favToast, setFavToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleHeartClick() {
+    const next = !localFav;
+    setLocalFav(next);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setFavToast(next ? "Added to favorites" : "Removed from favorites");
+    toastTimer.current = setTimeout(() => setFavToast(null), 2000);
+    onToggleFavorite();
+  }
 
   function applyQty(q: number) {
     const b = base.current;
     setQty(q);
+    setRawQty(String(q));
     setCalories(String(Math.round(b.calories * q)));
     if (b.protein)  setProtein(String(+(b.protein  * q).toFixed(1)));
     if (b.carbs)    setCarbs(String(+(b.carbs    * q).toFixed(1)));
@@ -202,13 +230,38 @@ function EditFoodModal({
       {/* Header */}
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-base font-bold text-white">Edit Entry</h3>
-        <button onClick={onClose} aria-label="Close"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleHeartClick}
+            aria-label={localFav ? "Remove from favorites" : "Add to favorites"}
+            className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${localFav ? "text-emerald-400 hover:bg-emerald-500/20" : "text-slate-500 hover:bg-slate-700 hover:text-emerald-400"}`}
+          >
+            {localFav ? (
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            )}
+          </button>
+          <button onClick={onClose} aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* Favorites toast */}
+      {favToast && (
+        <div className="mb-3 rounded-xl bg-emerald-500/15 px-3 py-2 text-center text-xs font-medium text-emerald-400">
+          {favToast}
+        </div>
+      )}
 
       <div className="overflow-y-auto max-h-[calc(75vh-5rem)] md:max-h-[calc(80vh-5rem)] space-y-4 pb-2">
         {/* Food name */}
@@ -226,14 +279,17 @@ function EditFoodModal({
             <input
               type="number"
               inputMode="decimal"
-              value={qty}
+              placeholder="0"
+              value={rawQty}
               onChange={e => {
+                setRawQty(e.target.value);
                 const parsed = parseFloat(e.target.value);
                 if (!isNaN(parsed) && parsed > 0) applyQty(+parsed.toFixed(2));
               }}
               onBlur={e => {
                 const parsed = parseFloat(e.target.value);
-                if (isNaN(parsed) || parsed <= 0) applyQty(1);
+                if (isNaN(parsed) || parsed < 0.25) applyQty(0.25);
+                else setRawQty(String(+parsed.toFixed(2)));
               }}
               className="flex-1 bg-transparent text-center text-2xl font-bold text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
@@ -388,6 +444,7 @@ function MealSection({
   onToggle,
   onAddFood,
   onCopyFrom,
+  onAddFromFavorites,
   onDelete,
   onEdit,
 }: {
@@ -398,6 +455,7 @@ function MealSection({
   onToggle: () => void;
   onAddFood: () => void;
   onCopyFrom: () => void;
+  onAddFromFavorites: () => void;
   onDelete: (id: string) => void;
   onEdit: (entry: FoodEntry) => void;
 }) {
@@ -441,7 +499,12 @@ function MealSection({
           {entries.length > 0 && (
             <div className="flex flex-col gap-1">
               {entries.map(e => (
-                <FoodItem key={e.id} entry={e} onDelete={() => onDelete(e.id)} onEdit={() => onEdit(e)} />
+                <FoodItem
+                  key={e.id}
+                  entry={e}
+                  onDelete={() => onDelete(e.id)}
+                  onEdit={() => onEdit(e)}
+                />
               ))}
             </div>
           )}
@@ -461,19 +524,31 @@ function MealSection({
             </button>
           )}
 
-          {/* Copy from — today only */}
+          {/* Copy from / Add from Favorites — today only */}
           {isToday && (
-            <button
-              onClick={onCopyFrom}
-              className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-                strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-              Copy from previous day…
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={onCopyFrom}
+                className="flex flex-1 min-h-[44px] items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                  strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                Copy from day…
+              </button>
+              <button
+                onClick={onAddFromFavorites}
+                className="flex flex-1 min-h-[44px] items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                  strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+                Add from Favorites…
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1259,6 +1334,7 @@ function SavedMealsView({
   const [loading,  setLoading]  = useState(true);
   const [selected, setSelected] = useState<SavedMeal | null>(null);
   const [qty,      setQty]      = useState(1);
+  const [rawQty,   setRawQty]   = useState("1");
   const [saving,   setSaving]   = useState(false);
 
   useEffect(() => {
@@ -1278,10 +1354,15 @@ function SavedMealsView({
   function selectMeal(meal: SavedMeal) {
     setSelected(meal);
     setQty(1);
+    setRawQty("1");
   }
 
   function adjustQty(delta: number) {
-    setQty(prev => Math.max(0.5, Math.round((prev + delta) * 2) / 2));
+    setQty(prev => {
+      const next = Math.max(0.25, +(prev + delta).toFixed(2));
+      setRawQty(String(next));
+      return next;
+    });
   }
 
   async function confirmLog() {
@@ -1316,13 +1397,28 @@ function SavedMealsView({
           <p className="mb-3 text-xs text-slate-400">Servings</p>
           <div className="flex items-center justify-between">
             <button
-              onClick={() => adjustQty(-0.5)}
-              disabled={qty <= 0.5}
+              onClick={() => adjustQty(-0.25)}
+              disabled={qty <= 0.25}
               className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white disabled:opacity-40 hover:bg-slate-600"
             >−</button>
-            <span className="text-3xl font-bold text-white">{qty}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={rawQty}
+              onChange={e => {
+                setRawQty(e.target.value);
+                const p = parseFloat(e.target.value);
+                if (!isNaN(p) && p >= 0.25) setQty(+p.toFixed(2));
+              }}
+              onBlur={e => {
+                const p = parseFloat(e.target.value);
+                if (isNaN(p) || p < 0.25) { setQty(0.25); setRawQty("0.25"); }
+                else { setRawQty(String(+p.toFixed(2))); }
+              }}
+              className="flex-1 bg-transparent text-center text-2xl font-bold text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
             <button
-              onClick={() => adjustQty(0.5)}
+              onClick={() => adjustQty(0.25)}
               className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white hover:bg-slate-600"
             >+</button>
           </div>
@@ -1521,6 +1617,137 @@ function DailyTotals({ entries, isToday }: { entries: FoodEntry[]; isToday: bool
   );
 }
 
+// ─── Favorites Picker (for AddIngredientSheet) ────────────────────────────────
+
+function FavoritesPickerView({
+  onSave,
+  onBack,
+}: {
+  mealLabel: string;
+  onSave: (data: LogPayload) => Promise<void>;
+  onBack: () => void;
+}) {
+  const { user } = useAuth();
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [selected,  setSelected]  = useState<Favorite | null>(null);
+  const [qty,       setQty]       = useState(1);
+  const [rawQty,    setRawQty]    = useState("1");
+  const [saving,    setSaving]    = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      if (!user || !supabase) { setLoading(false); return; }
+      const { data } = await supabase
+        .from("favorites")
+        .select("id, food_name, calories, protein, carbs, fat, serving_qty")
+        .eq("user_id", user.id)
+        .order("food_name");
+      setFavorites((data as Favorite[]) ?? []);
+      setLoading(false);
+    }
+    load();
+  }, [user]);
+
+  function adjustQty(delta: number) {
+    setQty(prev => {
+      const next = Math.max(0.25, +(prev + delta).toFixed(2));
+      setRawQty(String(next));
+      return next;
+    });
+  }
+
+  async function confirmAdd() {
+    if (!selected) return;
+    setSaving(true);
+    await onSave({
+      food_name:   selected.food_name,
+      calories:    Math.round(selected.calories * qty),
+      protein:     selected.protein != null ? +(selected.protein * qty).toFixed(1) : null,
+      carbs:       selected.carbs   != null ? +(selected.carbs   * qty).toFixed(1) : null,
+      fat:         selected.fat     != null ? +(selected.fat     * qty).toFixed(1) : null,
+      serving_qty: qty,
+    });
+    setSaving(false);
+  }
+
+  if (selected) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={() => { setSelected(null); setQty(1); setRawQty("1"); }} />
+          <p className="flex-1 truncate text-sm font-bold text-white">{selected.food_name}</p>
+        </div>
+        <div className="rounded-2xl bg-slate-800 px-4 py-3 space-y-2">
+          <p className="text-xs font-medium text-slate-400">Servings</p>
+          <div className="flex items-center gap-4 pr-2">
+            <button onClick={() => adjustQty(-0.25)} disabled={qty <= 0.25}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white disabled:opacity-40 hover:bg-slate-600">−</button>
+            <input
+              type="number" inputMode="decimal" value={rawQty}
+              onChange={e => {
+                setRawQty(e.target.value);
+                const p = parseFloat(e.target.value);
+                if (!isNaN(p) && p >= 0.25) setQty(+p.toFixed(2));
+              }}
+              onBlur={e => {
+                const p = parseFloat(e.target.value);
+                if (isNaN(p) || p < 0.25) { setQty(0.25); setRawQty("0.25"); }
+                else setRawQty(String(+p.toFixed(2)));
+              }}
+              className="flex-1 bg-transparent text-center text-2xl font-bold text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <button onClick={() => adjustQty(0.25)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-lg font-bold text-white hover:bg-slate-600 mr-1">+</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-4 gap-2 text-center">
+          {([
+            { label: "Cal",     value: String(Math.round(selected.calories * qty)),                                   color: "text-white"      },
+            { label: "Protein", value: selected.protein != null ? `${+(selected.protein * qty).toFixed(1)}g` : "—",   color: "text-sky-400"    },
+            { label: "Carbs",   value: selected.carbs   != null ? `${+(selected.carbs   * qty).toFixed(1)}g` : "—",   color: "text-yellow-400" },
+            { label: "Fat",     value: selected.fat     != null ? `${+(selected.fat     * qty).toFixed(1)}g` : "—",   color: "text-rose-400"   },
+          ] as const).map(({ label, value, color }) => (
+            <div key={label} className="rounded-xl bg-slate-800 py-2">
+              <p className="text-[10px] text-slate-500">{label}</p>
+              <p className={`text-sm font-bold ${color}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+        <button onClick={confirmAdd} disabled={saving}
+          className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60 hover:bg-emerald-400">
+          {saving ? "Adding…" : "Add Ingredient"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <BackButton onClick={onBack} />
+        <h3 className="text-base font-bold text-white">Favorites</h3>
+      </div>
+      <div className="max-h-[40vh] space-y-1 overflow-y-auto">
+        {loading && <p className="py-4 text-center text-sm text-slate-400">Loading…</p>}
+        {!loading && favorites.length === 0 && (
+          <div className="py-8 text-center">
+            <p className="text-sm text-slate-500">No favorites yet.</p>
+            <p className="mt-1 text-xs text-slate-600">Tap the heart on any food entry to save it.</p>
+          </div>
+        )}
+        {favorites.map(fav => (
+          <button key={fav.id} onClick={() => setSelected(fav)}
+            className="flex min-h-[56px] w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700">
+            <span className="flex-1 truncate text-sm font-medium text-white">{fav.food_name}</span>
+            <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{fav.calories} cal</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Add Ingredient Sheet (search/barcode/manual, no DB write) ───────────────
 
 function AddIngredientSheet({
@@ -1539,9 +1766,10 @@ function AddIngredientSheet({
   }
 
   const options: { id: IngredientMode; icon: string; label: string; sub: string }[] = [
-    { id: "search",  icon: "🔍", label: "Search",       sub: "USDA database"  },
-    { id: "barcode", icon: "📷", label: "Barcode",      sub: "Scan a product" },
-    { id: "manual",  icon: "✏️", label: "Manual Entry", sub: "Enter yourself" },
+    { id: "search",    icon: "🔍", label: "Search",       sub: "USDA database"  },
+    { id: "barcode",   icon: "📷", label: "Barcode",      sub: "Scan a product" },
+    { id: "manual",    icon: "✏️", label: "Manual Entry", sub: "Enter yourself" },
+    { id: "favorites", icon: "❤️", label: "Favorites",    sub: "Your saved foods" },
   ];
 
   const content = (
@@ -1558,7 +1786,7 @@ function AddIngredientSheet({
       </div>
       <div className="overflow-y-auto pb-2 max-h-[calc(70vh-4rem)] md:max-h-[calc(75vh-4rem)]">
         {mode === "options" && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {options.map(opt => (
               <button key={opt.id} onClick={() => setMode(opt.id)}
                 className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
@@ -1569,9 +1797,10 @@ function AddIngredientSheet({
             ))}
           </div>
         )}
-        {mode === "manual"  && <ManualEntry   mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
-        {mode === "search"  && <USDASearch     mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
-        {mode === "barcode" && <BarcodeScanner mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "manual"    && <ManualEntry        mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "search"    && <USDASearch          mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "barcode"   && <BarcodeScanner      mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "favorites" && <FavoritesPickerView mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
       </div>
     </>
   );
@@ -1816,6 +2045,309 @@ function MealBuilderSheet({
   );
 }
 
+// ─── Favorites Sheet ──────────────────────────────────────────────────────────
+
+function FavoritesSheet({
+  meal,
+  onClose,
+  onSaved,
+}: {
+  meal: typeof MEALS[number];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { user } = useAuth();
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [selected,  setSelected]  = useState<Favorite | null>(null);
+  const [qty,       setQty]       = useState(1);
+  const [rawQty,    setRawQty]    = useState("1");
+  const [saving,    setSaving]    = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      if (!user || !supabase) return;
+      const { data } = await supabase
+        .from("favorites")
+        .select("id, food_name, calories, protein, carbs, fat, serving_qty")
+        .eq("user_id", user.id)
+        .order("food_name");
+      setFavorites((data as Favorite[]) ?? []);
+      setLoading(false);
+    }
+    load();
+  }, [user]);
+
+  function selectFav(fav: Favorite) {
+    setSelected(fav);
+    setQty(1);
+    setRawQty("1");
+  }
+
+  function adjustQty(delta: number) {
+    setQty(prev => {
+      const next = Math.max(0.25, +(prev + delta).toFixed(2));
+      setRawQty(String(next));
+      return next;
+    });
+  }
+
+  async function confirmLog() {
+    if (!selected || !user || !supabase) return;
+    setSaving(true);
+    const { error } = await supabase.from("food_logs").insert({
+      user_id:     user.id,
+      meal_type:   meal.type,
+      food_name:   selected.food_name,
+      calories:    Math.round(selected.calories * qty),
+      protein:     selected.protein != null ? +(selected.protein * qty).toFixed(1) : null,
+      carbs:       selected.carbs   != null ? +(selected.carbs   * qty).toFixed(1) : null,
+      fat:         selected.fat     != null ? +(selected.fat     * qty).toFixed(1) : null,
+      serving_qty: qty,
+      logged_at:   new Date().toISOString(),
+    });
+    setSaving(false);
+    if (!error) { onSaved(); onClose(); }
+  }
+
+  const content = (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        {selected ? (
+          <div className="flex items-center gap-3">
+            <BackButton onClick={() => setSelected(null)} />
+            <h3 className="flex-1 truncate text-base font-bold text-white">{selected.food_name}</h3>
+          </div>
+        ) : (
+          <h3 className="text-base font-bold text-white">Favorites — {meal.label}</h3>
+        )}
+        {!selected && (
+          <button onClick={onClose} aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+              strokeLinecap="round" className="h-4 w-4">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {selected ? (
+        <div className="space-y-4">
+          {/* Serving stepper */}
+          <div className="rounded-2xl bg-slate-800 px-4 py-3 space-y-2">
+            <p className="text-xs font-medium text-slate-400">Servings</p>
+            <div className="flex items-center gap-4 pr-2">
+              <button onClick={() => adjustQty(-0.25)} disabled={qty <= 0.25}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xl font-bold text-white disabled:opacity-40 hover:bg-slate-600">−</button>
+              <input
+                type="number" inputMode="decimal" value={rawQty}
+                onChange={e => {
+                  setRawQty(e.target.value);
+                  const p = parseFloat(e.target.value);
+                  if (!isNaN(p) && p >= 0.25) setQty(+p.toFixed(2));
+                }}
+                onBlur={e => {
+                  const p = parseFloat(e.target.value);
+                  if (isNaN(p) || p < 0.25) { setQty(0.25); setRawQty("0.25"); }
+                  else setRawQty(String(+p.toFixed(2)));
+                }}
+                className="flex-1 bg-transparent text-center text-2xl font-bold text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <button onClick={() => adjustQty(0.25)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-lg font-bold text-white hover:bg-slate-600 mr-1">+</button>
+            </div>
+          </div>
+          {/* Scaled nutrition */}
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {([
+              { label: "Cal",     value: String(Math.round(selected.calories * qty)),                               color: "text-white"      },
+              { label: "Protein", value: selected.protein != null ? `${+(selected.protein * qty).toFixed(1)}g` : "—", color: "text-sky-400"    },
+              { label: "Carbs",   value: selected.carbs   != null ? `${+(selected.carbs   * qty).toFixed(1)}g` : "—", color: "text-yellow-400" },
+              { label: "Fat",     value: selected.fat     != null ? `${+(selected.fat     * qty).toFixed(1)}g` : "—", color: "text-rose-400"   },
+            ] as const).map(({ label, value, color }) => (
+              <div key={label} className="rounded-xl bg-slate-800 py-2">
+                <p className="text-[10px] text-slate-500">{label}</p>
+                <p className={`text-sm font-bold ${color}`}>{value}</p>
+              </div>
+            ))}
+          </div>
+          <button onClick={confirmLog} disabled={saving}
+            className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60 hover:bg-emerald-400">
+            {saving ? "Adding…" : `Add to ${meal.label}`}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1 max-h-[50vh] overflow-y-auto">
+          {loading && <p className="py-4 text-center text-sm text-slate-400">Loading…</p>}
+          {!loading && favorites.length === 0 && (
+            <div className="py-8 text-center">
+              <p className="text-sm text-slate-500">No favorites yet.</p>
+              <p className="mt-1 text-xs text-slate-600">Tap the heart icon on any food item to save it.</p>
+            </div>
+          )}
+          {favorites.map(fav => (
+            <button key={fav.id} onClick={() => selectFav(fav)}
+              className="flex min-h-[56px] w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700">
+              <span className="flex-1 truncate text-sm font-medium text-white">{fav.food_name}</span>
+              <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{fav.calories} cal</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
+        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
+        {content}
+      </div>
+      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
+        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+          {content}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Meals & More Sheet ────────────────────────────────────────────────────────
+
+function MealsAndMoreSheet({
+  onClose,
+  onBuildMeal,
+}: {
+  onClose: () => void;
+  onBuildMeal: () => void;
+}) {
+  const { user } = useAuth();
+  type View = "menu" | "saved-meals" | "favorites";
+  const [view,         setView]        = useState<View>("menu");
+  const [savedMeals,   setSavedMeals]  = useState<SavedMeal[]>([]);
+  const [favorites,    setFavorites]   = useState<Favorite[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+  const [loadingFavs,  setLoadingFavs]  = useState(false);
+
+  async function openSavedMeals() {
+    setView("saved-meals");
+    if (!user || !supabase) return;
+    setLoadingSaved(true);
+    const { data } = await supabase
+      .from("saved_meals")
+      .select("id, name, calories, protein, carbs, fat")
+      .eq("user_id", user.id)
+      .order("name");
+    setSavedMeals((data as SavedMeal[]) ?? []);
+    setLoadingSaved(false);
+  }
+
+  async function openFavorites() {
+    setView("favorites");
+    if (!user || !supabase) return;
+    setLoadingFavs(true);
+    const { data } = await supabase
+      .from("favorites")
+      .select("id, food_name, calories, protein, carbs, fat, serving_qty")
+      .eq("user_id", user.id)
+      .order("food_name");
+    setFavorites((data as Favorite[]) ?? []);
+    setLoadingFavs(false);
+  }
+
+  const content = (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        {view !== "menu" ? (
+          <div className="flex items-center gap-3">
+            <BackButton onClick={() => setView("menu")} />
+            <h3 className="text-base font-bold text-white">
+              {view === "saved-meals" ? "Saved Meals" : "Favorites"}
+            </h3>
+          </div>
+        ) : (
+          <h3 className="text-base font-bold text-white">Meals & More</h3>
+        )}
+        <button onClick={onClose} aria-label="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+            strokeLinecap="round" className="h-4 w-4">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      {view === "menu" && (
+        <div className="space-y-2">
+          {([
+            { icon: "🍳", label: "Build a Saved Meal", sub: "Create a reusable meal", action: () => { onClose(); onBuildMeal(); } },
+            { icon: "🍽️", label: "View Saved Meals",   sub: "Browse your saved meals",  action: openSavedMeals },
+            { icon: "❤️",  label: "View Favorites",     sub: "Browse favorited foods",   action: openFavorites  },
+          ]).map(({ icon, label, sub, action }) => (
+            <button key={label} onClick={action}
+              className="flex min-h-[64px] w-full items-center gap-4 rounded-2xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700 transition-colors">
+              <span className="text-2xl leading-none">{icon}</span>
+              <div>
+                <p className="text-sm font-semibold text-white">{label}</p>
+                <p className="text-xs text-slate-400">{sub}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {view === "saved-meals" && (
+        <div className="max-h-[50vh] space-y-1 overflow-y-auto">
+          {loadingSaved && <p className="py-4 text-center text-sm text-slate-400">Loading…</p>}
+          {!loadingSaved && savedMeals.length === 0 && (
+            <p className="py-8 text-center text-sm text-slate-500">No saved meals yet.</p>
+          )}
+          {savedMeals.map(m => (
+            <div key={m.id} className="flex min-h-[52px] items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
+              <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
+              <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === "favorites" && (
+        <div className="max-h-[50vh] space-y-1 overflow-y-auto">
+          {loadingFavs && <p className="py-4 text-center text-sm text-slate-400">Loading…</p>}
+          {!loadingFavs && favorites.length === 0 && (
+            <p className="py-8 text-center text-sm text-slate-500">No favorites yet.</p>
+          )}
+          {favorites.map(f => (
+            <div key={f.id} className="flex min-h-[52px] items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
+              <span className="flex-1 truncate text-sm font-medium text-white">{f.food_name}</span>
+              <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{f.calories} cal</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
+        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
+        {content}
+      </div>
+      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
+        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl">
+          {content}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Copy From Sheet ──────────────────────────────────────────────────────────
 
 function CopyFromSheet({
@@ -1973,16 +2505,20 @@ function CopyFromSheet({
 
 export function FoodLogPage() {
   const { user } = useAuth();
-  const [selectedDate,  setSelectedDate]  = useState<string>(todayISO());
-  const [entries,       setEntries]       = useState<FoodEntry[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [expandedMeal,  setExpandedMeal]  = useState<MealType | null>(null);
-  const [sheetMeal,     setSheetMeal]     = useState<typeof MEALS[number] | null>(null);
-  const [editingEntry,  setEditingEntry]  = useState<FoodEntry | null>(null);
-  const [showBuildMeal, setShowBuildMeal] = useState(false);
-  const [copyFromMeal,  setCopyFromMeal]  = useState<typeof MEALS[number] | null>(null);
+  const [selectedDate,      setSelectedDate]      = useState<string>(todayISO());
+  const [entries,           setEntries]           = useState<FoodEntry[]>([]);
+  const [loading,           setLoading]           = useState(true);
+  const [expandedMeal,      setExpandedMeal]      = useState<MealType | null>(null);
+  const [sheetMeal,         setSheetMeal]         = useState<typeof MEALS[number] | null>(null);
+  const [editingEntry,      setEditingEntry]      = useState<FoodEntry | null>(null);
+  const [showBuildMeal,     setShowBuildMeal]     = useState(false);
+  const [showMealsAndMore,  setShowMealsAndMore]  = useState(false);
+  const [copyFromMeal,      setCopyFromMeal]      = useState<typeof MEALS[number] | null>(null);
+  const [favoritesSheetMeal, setFavoritesSheetMeal] = useState<typeof MEALS[number] | null>(null);
+  const [favorites,         setFavorites]         = useState<Favorite[]>([]);
 
   const isToday = selectedDate === todayISO();
+  const favoriteNames = new Set(favorites.map(f => f.food_name));
 
   const loadEntries = useCallback(async () => {
     if (!user || !supabase) return;
@@ -2001,6 +2537,50 @@ export function FoodLogPage() {
   }, [user, selectedDate]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // Load favorites once on mount
+  useEffect(() => {
+    if (!user || !supabase) return;
+    supabase
+      .from("favorites")
+      .select("id, food_name, calories, protein, carbs, fat, serving_qty")
+      .eq("user_id", user.id)
+      .order("food_name")
+      .then(({ data }: { data: Favorite[] | null }) => setFavorites(data ?? []));
+  }, [user]);
+
+  async function handleToggleFavorite(entry: FoodEntry) {
+    console.log("[Favorites] toggle:", entry.food_name, "| currently saved:", favoriteNames.has(entry.food_name));
+    if (!user || !supabase) {
+      console.log("[Favorites] abort — no user or supabase client");
+      return;
+    }
+    if (favoriteNames.has(entry.food_name)) {
+      const { error } = await supabase
+        .from("favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("food_name", entry.food_name);
+      console.log("[Favorites] delete:", error ? `ERROR — ${error.message}` : "success");
+      if (!error) setFavorites(prev => prev.filter(f => f.food_name !== entry.food_name));
+    } else {
+      const { data, error } = await supabase
+        .from("favorites")
+        .insert({
+          user_id:     user.id,
+          food_name:   entry.food_name,
+          calories:    entry.calories,
+          protein:     entry.protein,
+          carbs:       entry.carbs,
+          fat:         entry.fat,
+          serving_qty: entry.serving_qty,
+        })
+        .select()
+        .single();
+      console.log("[Favorites] insert:", error ? `ERROR — ${error.message}` : "success", data);
+      if (data) setFavorites(prev => [...prev, data as Favorite]);
+    }
+  }
 
   function prevDay() {
     const [y, m, d] = selectedDate.split("-").map(Number);
@@ -2113,6 +2693,7 @@ export function FoodLogPage() {
             onToggle={() => setExpandedMeal(prev => prev === meal.type ? null : meal.type)}
             onAddFood={() => { setExpandedMeal(meal.type); setSheetMeal(meal); }}
             onCopyFrom={() => { setExpandedMeal(meal.type); setCopyFromMeal(meal); }}
+            onAddFromFavorites={() => { setExpandedMeal(meal.type); setFavoritesSheetMeal(meal); }}
             onDelete={handleDelete}
             onEdit={setEditingEntry}
           />
@@ -2121,17 +2702,34 @@ export function FoodLogPage() {
         {/* Daily totals */}
         <DailyTotals entries={entries} isToday={isToday} />
 
-        {/* Build saved meal — today only */}
+        {/* Meals & More — today only */}
         {isToday && (
           <button
             type="button"
-            onClick={() => setShowBuildMeal(true)}
+            onClick={() => setShowMealsAndMore(true)}
             className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 py-3 text-sm font-medium text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors"
           >
-            Build a Saved Meal
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+              strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+              <line x1="8" y1="6" x2="21" y2="6" />
+              <line x1="8" y1="12" x2="21" y2="12" />
+              <line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" />
+              <line x1="3" y1="12" x2="3.01" y2="12" />
+              <line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+            Meals & More
           </button>
         )}
       </div>
+
+      {/* Meals & More sheet */}
+      {showMealsAndMore && (
+        <MealsAndMoreSheet
+          onClose={() => setShowMealsAndMore(false)}
+          onBuildMeal={() => setShowBuildMeal(true)}
+        />
+      )}
 
       {/* Meal builder sheet */}
       {showBuildMeal && (
@@ -2160,12 +2758,23 @@ export function FoodLogPage() {
         />
       )}
 
+      {/* Favorites sheet */}
+      {favoritesSheetMeal && (
+        <FavoritesSheet
+          meal={favoritesSheetMeal}
+          onClose={() => setFavoritesSheetMeal(null)}
+          onSaved={loadEntries}
+        />
+      )}
+
       {/* Edit food modal */}
       {editingEntry && (
         <EditFoodModal
           entry={editingEntry}
+          isFavorited={favoriteNames.has(editingEntry.food_name)}
           onSave={handleSaveEdit}
           onClose={() => setEditingEntry(null)}
+          onToggleFavorite={() => handleToggleFavorite(editingEntry)}
         />
       )}
     </>
