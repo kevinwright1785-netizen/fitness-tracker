@@ -45,6 +45,21 @@ main {
   padding-top: env(safe-area-inset-top);
 }
 
+/* Prevent iOS double-tap zoom on interactive elements */
+input,
+select,
+textarea,
+button {
+  touch-action: manipulation;
+}
+
+/* Prevent iOS Safari auto-zoom on focused inputs (requires >= 16px) */
+input,
+select,
+textarea {
+  font-size: 16px !important;
+}
+
 @keyframes scan {
   0%   { top: 0%; }
   50%  { top: calc(100% - 2px); }

@@ -188,7 +188,7 @@ export default function AskAIPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex min-h-svh flex-col bg-slate-950 px-4 pt-4 pb-24">
+    <div className="flex min-h-svh flex-col bg-slate-950 px-4 pb-24" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {/* Header */}
       <header className="mb-3 flex items-center gap-2 pt-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20">

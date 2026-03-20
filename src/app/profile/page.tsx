@@ -133,6 +133,23 @@ export default function ProfilePage() {
 
   const currentWeightDisplay = latestWeightLbs ?? startingWeight;
 
+  // ── DOB helpers (three-select approach avoids iOS date input overflow) ────
+  const dobParts = dob ? dob.split("-") : ["", "", ""];
+  const dobYear  = dobParts[0] || "";
+  const dobMonth = dobParts[1] || "";
+  const dobDay   = dobParts[2] || "";
+
+  function handleDobPart(year: string, month: string, day: string) {
+    setDob(year && month && day ? `${year}-${month}-${day}` : "");
+  }
+
+  const months = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December",
+  ];
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: currentYear - 1923 }, (_, i) => currentYear - i);
+
   return (
     <>
       <main className="flex flex-1 flex-col gap-4 py-4">
@@ -170,12 +187,38 @@ export default function ProfilePage() {
 
           <div>
             <label className="mb-1 block text-xs text-slate-300">Date of birth</label>
-            <input
-              type="date"
-              value={dob}
-              onChange={(e) => setDob(e.target.value)}
-              className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
+            <div className="flex gap-2">
+              <select
+                value={dobMonth}
+                onChange={(e) => handleDobPart(dobYear, e.target.value, dobDay)}
+                className="flex-1 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Month</option>
+                {months.map((m, i) => (
+                  <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={dobDay}
+                onChange={(e) => handleDobPart(dobYear, dobMonth, e.target.value)}
+                className="w-20 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Day</option>
+                {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0")).map((d) => (
+                  <option key={d} value={d}>{Number(d)}</option>
+                ))}
+              </select>
+              <select
+                value={dobYear}
+                onChange={(e) => handleDobPart(e.target.value, dobMonth, dobDay)}
+                className="w-24 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Year</option>
+                {years.map((y) => (
+                  <option key={y} value={String(y)}>{y}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
