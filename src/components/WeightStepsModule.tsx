@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent } from "react";
 import { Card } from "./Card";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./AuthContext";
@@ -199,11 +199,13 @@ function fmtLbs(val: number | null | undefined): string {
 function CustomTooltip({
   active,
   payload,
+  forceHide,
 }: {
   active?: boolean;
   payload?: { value: number; payload: WeightPoint }[];
+  forceHide?: boolean;
 }) {
-  if (!active || !payload?.length) return null;
+  if (!active || !payload?.length || forceHide) return null;
   const point = payload[0];
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs shadow-lg">
@@ -231,6 +233,35 @@ export function WeightStepsModule() {
   const [commentary, setCommentary] = useState<string | null>(null);
   const [loadingCommentary, setLoadingCommentary] = useState(false);
   const [insightReady, setInsightReady] = useState(false);
+
+  // Tooltip dismiss state
+  const [tooltipForceHide, setTooltipForceHide] = useState(false);
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chartWrapperRef = useRef<HTMLDivElement>(null);
+
+  function handleChartTouch() {
+    setTooltipForceHide(false);
+    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+    tooltipTimerRef.current = setTimeout(() => setTooltipForceHide(true), 2000);
+  }
+
+  function dismissTooltip() {
+    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+    setTooltipForceHide(true);
+  }
+
+  useEffect(() => {
+    function handleOutsideTouch(e: TouchEvent) {
+      if (chartWrapperRef.current && !chartWrapperRef.current.contains(e.target as Node)) {
+        dismissTooltip();
+      }
+    }
+    document.addEventListener("touchstart", handleOutsideTouch);
+    return () => {
+      document.removeEventListener("touchstart", handleOutsideTouch);
+      if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+    };
+  }, []);
 
   // Load profile
   useEffect(() => {
@@ -554,6 +585,11 @@ export function WeightStepsModule() {
             <span className="text-slate-600">Log your weight to get started.</span>
           </div>
         ) : (
+          <div
+            ref={chartWrapperRef}
+            onTouchStart={handleChartTouch}
+            style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+          >
           <ResponsiveContainer width="100%" height={230}>
             <LineChart
               data={rangePoints}
@@ -592,7 +628,7 @@ export function WeightStepsModule() {
                 tickFormatter={(v: number) => `${v}`}
                 width={48}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip forceHide={tooltipForceHide} />} />
               <Line
                 type="monotone"
                 dataKey="weight"
@@ -603,6 +639,7 @@ export function WeightStepsModule() {
               />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         )}
       </Card>
 
