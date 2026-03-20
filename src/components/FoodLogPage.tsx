@@ -1827,9 +1827,11 @@ function AddIngredientSheet({
 function MealBuilderSheet({
   onClose,
   onSaved,
+  onBack,
 }: {
   onClose: () => void;
   onSaved: () => void;
+  onBack?: () => void;
 }) {
   const { user } = useAuth();
   const [mealName,         setMealName]         = useState("");
@@ -1917,7 +1919,18 @@ function MealBuilderSheet({
     <>
       {/* Header */}
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-base font-bold text-white">Build a Saved Meal</h3>
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <button onClick={onBack} aria-label="Back"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          )}
+          <h3 className="text-base font-bold text-white">Build a Saved Meal</h3>
+        </div>
         <button onClick={onClose} aria-label="Close"
           className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
@@ -2802,6 +2815,7 @@ export function FoodLogPage() {
         <MealBuilderSheet
           onClose={() => setShowBuildMeal(false)}
           onSaved={() => {}}
+          onBack={() => { setShowBuildMeal(false); setShowMealsAndMore(true); }}
         />
       )}
 
