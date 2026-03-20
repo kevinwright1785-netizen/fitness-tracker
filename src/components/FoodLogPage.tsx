@@ -2385,7 +2385,10 @@ function CopyFromSheet({
   const yesterday = new Date(y, m - 1, d - 1);
   const defaultDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
 
-  const [pickDate,   setPickDate]   = useState(defaultDate);
+  const [pickMonth,  setPickMonth]  = useState(String(yesterday.getMonth() + 1).padStart(2, "0"));
+  const [pickDay,    setPickDay]    = useState(String(yesterday.getDate()).padStart(2, "0"));
+  const [pickYear,   setPickYear]   = useState(String(yesterday.getFullYear()));
+  const pickDate = `${pickYear}-${pickMonth}-${pickDay}`;
   const [candidates, setCandidates] = useState<FoodEntry[]>([]);
   const [fetching,   setFetching]   = useState(false);
   const [fetched,    setFetched]    = useState(false);
@@ -2447,22 +2450,52 @@ function CopyFromSheet({
         </button>
       </div>
 
-      <div className="space-y-4" style={{ overflow: 'hidden' }}>
+      <div className="space-y-4">
         {/* Date picker */}
-        <div style={{ paddingRight: '16px', overflow: 'hidden' }}>
+        <div>
           <label className="mb-1.5 block text-xs font-medium text-slate-400">Select a date</label>
-          <input
-            type="date"
-            value={pickDate}
-            max={defaultDate}
-            onChange={e => {
-              if (!e.target.value) return;
-              setPickDate(e.target.value);
-              fetchForDate(e.target.value);
-            }}
-            className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
-            style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}
-          />
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              {
+                value: pickMonth, setValue: setPickMonth,
+                options: [
+                  ["01","Jan"],["02","Feb"],["03","Mar"],["04","Apr"],["05","May"],["06","Jun"],
+                  ["07","Jul"],["08","Aug"],["09","Sep"],["10","Oct"],["11","Nov"],["12","Dec"],
+                ],
+              },
+              {
+                value: pickDay, setValue: setPickDay,
+                options: Array.from({ length: 31 }, (_, i) => {
+                  const v = String(i + 1).padStart(2, "0");
+                  return [v, String(i + 1)] as [string, string];
+                }),
+              },
+              {
+                value: pickYear, setValue: setPickYear,
+                options: Array.from({ length: 5 }, (_, i) => {
+                  const yr = String(yesterday.getFullYear() - i);
+                  return [yr, yr] as [string, string];
+                }),
+              },
+            ].map(({ value, setValue, options }, idx) => (
+              <select
+                key={idx}
+                value={value}
+                onChange={e => {
+                  setValue(e.target.value);
+                  const parts = [pickMonth, pickDay, pickYear];
+                  parts[idx] = e.target.value;
+                  const [mo, da, yr] = parts;
+                  fetchForDate(`${yr}-${mo}-${da}`);
+                }}
+                className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+              >
+                {options.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            ))}
+          </div>
         </div>
 
         {/* Results */}
