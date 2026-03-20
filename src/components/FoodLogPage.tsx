@@ -2461,6 +2461,7 @@ function CopyFromSheet({
               fetchForDate(e.target.value);
             }}
             className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+            style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', paddingRight: '16px' }}
           />
         </div>
 
