@@ -2528,6 +2528,7 @@ export function FoodLogPage() {
   const [loading,           setLoading]           = useState(true);
   const [expandedMeal,      setExpandedMeal]      = useState<MealType | null>(null);
   const [sheetMeal,         setSheetMeal]         = useState<typeof MEALS[number] | null>(null);
+  const [sheetKey,          setSheetKey]          = useState(0);
   const [editingEntry,      setEditingEntry]      = useState<FoodEntry | null>(null);
   const [showBuildMeal,     setShowBuildMeal]     = useState(false);
   const [showMealsAndMore,  setShowMealsAndMore]  = useState(false);
@@ -2709,7 +2710,7 @@ export function FoodLogPage() {
             expanded={expandedMeal === meal.type}
             isToday={isToday}
             onToggle={() => setExpandedMeal(prev => prev === meal.type ? null : meal.type)}
-            onAddFood={() => { setExpandedMeal(meal.type); setSheetMeal(meal); }}
+            onAddFood={() => { setExpandedMeal(meal.type); setSheetMeal(meal); setSheetKey(k => k + 1); }}
             onCopyFrom={() => { setExpandedMeal(meal.type); setCopyFromMeal(meal); }}
             onAddFromFavorites={() => { setExpandedMeal(meal.type); setFavoritesSheetMeal(meal); }}
             onDelete={handleDelete}
@@ -2760,6 +2761,7 @@ export function FoodLogPage() {
       {/* Add food sheet */}
       {sheetMeal && (
         <AddFoodSheet
+          key={sheetKey}
           meal={sheetMeal}
           onClose={() => setSheetMeal(null)}
           onSaved={loadEntries}
