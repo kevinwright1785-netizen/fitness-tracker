@@ -2505,7 +2505,7 @@ function CopyFromSheet({
         {fetched && !fetching && candidates.length === 0 && (
           <p className="py-2 text-center text-sm text-slate-500">No {meal.label} entries on that day.</p>
         )}
-        {candidates.length > 0 && (
+        {fetched && !fetching && candidates.length > 0 && (
           <div className="space-y-1">
             <p className="text-xs font-medium text-slate-400">{candidates.length} item{candidates.length !== 1 ? "s" : ""} to copy:</p>
             <div className="max-h-[30vh] space-y-1 overflow-y-auto rounded-2xl bg-slate-800 p-2">
@@ -2513,6 +2513,15 @@ function CopyFromSheet({
                 <div key={e.id} className="flex items-center justify-between rounded-xl px-2 py-1.5">
                   <span className="flex-1 truncate pr-3 text-sm text-slate-200">{e.food_name}</span>
                   <span className="shrink-0 text-sm font-semibold text-white">{e.calories} cal</span>
+                  <button
+                    onClick={() => setCandidates(prev => prev.filter(c => c.id !== e.id))}
+                    aria-label="Remove"
+                    className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" className="h-3 w-3">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>
