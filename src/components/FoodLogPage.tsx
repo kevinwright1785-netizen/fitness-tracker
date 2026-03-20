@@ -2447,9 +2447,9 @@ function CopyFromSheet({
         </button>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-4" style={{ overflow: 'hidden' }}>
         {/* Date picker */}
-        <div>
+        <div style={{ paddingRight: '16px', overflow: 'hidden' }}>
           <label className="mb-1.5 block text-xs font-medium text-slate-400">Select a date</label>
           <input
             type="date"
@@ -2461,7 +2461,7 @@ function CopyFromSheet({
               fetchForDate(e.target.value);
             }}
             className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
-            style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', paddingRight: '16px' }}
+            style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}
           />
         </div>
 
