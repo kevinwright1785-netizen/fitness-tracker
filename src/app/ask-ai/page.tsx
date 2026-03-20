@@ -247,7 +247,7 @@ export default function AskAIPage() {
       <form
         onSubmit={handleSubmit}
         className="mt-2 flex items-end gap-2 rounded-2xl bg-slate-900 p-2 ring-1 ring-slate-800"
-        style={{ marginBottom: '10px' }}
+        style={{ position: 'sticky', bottom: '16px' }}
       >
         <textarea
           ref={inputRef}
