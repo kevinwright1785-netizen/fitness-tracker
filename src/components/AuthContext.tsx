@@ -13,8 +13,24 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// Synchronously read cached Supabase user from localStorage so the app
+// renders immediately with auth state on PWA launch instead of blank screen.
+function getCachedUser(): any | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = Object.keys(localStorage).find(
+      (k) => k.startsWith("sb-") && k.endsWith("-auth-token")
+    );
+    if (key) {
+      const parsed = JSON.parse(localStorage.getItem(key) ?? "{}");
+      return parsed?.user ?? null;
+    }
+  } catch {}
+  return null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<any | null>(getCachedUser);
   const [loading, setLoading] = useState(true);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const router = useRouter();
@@ -27,9 +43,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       const {
-        data: { user }
-      } = await supabase.auth.getUser();
-      const currentUser = user ?? null;
+        data: { session }
+      } = await supabase.auth.getSession();
+      const currentUser = session?.user ?? null;
       setUser(currentUser);
 
       if (currentUser) {
