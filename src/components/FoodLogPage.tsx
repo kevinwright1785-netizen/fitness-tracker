@@ -1498,11 +1498,6 @@ function AddFoodSheet({
   const { user } = useAuth();
   const [mode, setMode] = useState<SheetMode>("options");
 
-  function handleClose() {
-    setMode("options");
-    onClose();
-  }
-
   async function handleSave(data: LogPayload) {
     if (!user || !supabase) return;
     const { error } = await supabase.from("food_logs").insert({
@@ -1532,9 +1527,9 @@ function AddFoodSheet({
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-base font-bold text-white">Add to {meal.label}</h3>
         <button
-          onClick={handleClose}
+          onClick={onClose}
           aria-label="Close"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white focus:outline-none"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
             strokeLinecap="round" className="h-4 w-4">
@@ -1551,7 +1546,7 @@ function AddFoodSheet({
               <button
                 key={opt.id}
                 onClick={() => setMode(opt.id)}
-                className="flex min-h-[88px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-3.5 text-left hover:bg-slate-700 focus:outline-none"
+                className="flex min-h-[88px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-3.5 text-left hover:bg-slate-700"
               >
                 <span className="text-2xl leading-none">{opt.icon}</span>
                 <span className="mt-1 text-sm font-semibold text-white">{opt.label}</span>
@@ -1571,7 +1566,7 @@ function AddFoodSheet({
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={handleClose} />
+      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
 
       {/* Mobile: bottom sheet */}
       <div
@@ -1764,11 +1759,6 @@ function AddIngredientSheet({
 }) {
   const [mode, setMode] = useState<IngredientMode>("options");
 
-  function handleClose() {
-    setMode("options");
-    onClose();
-  }
-
   // Wrap onAdd so sub-components see the expected Promise<void> signature
   async function handleSave(data: LogPayload) {
     onAdd(data);
@@ -1786,8 +1776,8 @@ function AddIngredientSheet({
     <>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-base font-bold text-white">Add Ingredient</h3>
-        <button onClick={handleClose} aria-label="Close"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white focus:outline-none">
+        <button onClick={onClose} aria-label="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
             strokeLinecap="round" className="h-4 w-4">
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -1799,7 +1789,7 @@ function AddIngredientSheet({
           <div className="grid grid-cols-2 gap-2">
             {options.map(opt => (
               <button key={opt.id} onClick={() => setMode(opt.id)}
-                className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700 focus:outline-none">
+                className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
                 <span className="text-2xl leading-none">{opt.icon}</span>
                 <span className="mt-1 text-xs font-semibold text-white">{opt.label}</span>
                 <span className="text-[10px] text-slate-400">{opt.sub}</span>
@@ -1817,7 +1807,7 @@ function AddIngredientSheet({
 
   return (
     <>
-      <div className="fixed inset-0 z-60 bg-slate-950/70" onClick={handleClose} />
+      <div className="fixed inset-0 z-60 bg-slate-950/70" onClick={onClose} />
       <div className="fixed bottom-0 left-0 right-0 z-[70] mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
         style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
@@ -2770,7 +2760,6 @@ export function FoodLogPage() {
       {/* Add food sheet */}
       {sheetMeal && (
         <AddFoodSheet
-          key={sheetMeal.type}
           meal={sheetMeal}
           onClose={() => setSheetMeal(null)}
           onSaved={loadEntries}
