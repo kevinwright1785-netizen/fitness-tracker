@@ -381,6 +381,14 @@ export function WeightStepsModule() {
       // Same formula as Dashboard: MFP-equivalent ~151 cal for 5,000 steps at 223 lbs
       const stepsCalories = Math.round(todaySteps * 0.000135 * weight);
       caloriesRemaining = profile.daily_calories + stepsCalories - caloriesConsumed;
+      console.log("[trend-commentary] calories debug:", {
+        daily_calories: profile.daily_calories,
+        todaySteps,
+        weight,
+        stepsCalories,
+        caloriesConsumed,
+        caloriesRemaining,
+      });
     }
 
     try {
