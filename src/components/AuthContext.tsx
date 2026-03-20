@@ -95,6 +95,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOnboardingComplete(true);
   }
 
+  if (loading) {
+    return (
+      <div style={{ backgroundColor: '#020617', minHeight: '100vh', width: '100%' }} />
+    );
+  }
+
   return (
     <AuthContext.Provider value={{ user, loading, onboardingComplete, completeOnboarding }}>
       {children}

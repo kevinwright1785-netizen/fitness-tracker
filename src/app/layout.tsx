@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" style={{ backgroundColor: '#020617' }}>
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         {/* iPhone 16 Pro Max — exact pixel match required for iOS to use it */}
@@ -33,7 +33,7 @@ export default function RootLayout({
         {/* Generic fallback for all other devices */}
         <link rel="apple-touch-startup-image" href="/splash.png" />
       </head>
-      <body className="safe-iphone bg-slate-950 text-slate-50">
+      <body className="safe-iphone bg-slate-950 text-slate-50" style={{ backgroundColor: '#020617', minHeight: '100vh' }}>
         <AuthProvider>
           <ChatProvider>
             <div className="mx-auto flex min-h-screen max-w-md flex-col px-4 pb-24">
