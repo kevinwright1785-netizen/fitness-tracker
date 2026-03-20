@@ -1038,22 +1038,6 @@ function BarcodeScanner({
 
     async function start() {
       try {
-        // Check existing permission state to avoid re-prompting on iOS
-        let permissionGranted = false;
-        try {
-          const perm = await navigator.permissions.query({ name: "camera" as PermissionName });
-          if (perm.state === "denied") {
-            if (!cancelled) {
-              setErrMsg("Camera access is required to scan barcodes. Please enable in Settings.");
-              setStatus("error");
-            }
-            return;
-          }
-          permissionGranted = perm.state === "granted";
-        } catch {
-          // permissions API not supported — proceed normally
-        }
-
         const [{ BrowserMultiFormatReader }, { BarcodeFormat }, { default: DecodeHintType }] =
           await Promise.all([
             import("@zxing/browser"),
@@ -1070,15 +1054,9 @@ function BarcodeScanner({
           BarcodeFormat.CODE_128,
         ]);
 
-        const reader = new BrowserMultiFormatReader(hints);
-
-        // Skip device enumeration if already granted — enumeration calls getUserMedia
-        // internally (to get device labels) which can re-trigger the iOS permission prompt
-        let deviceId: string | undefined;
-        if (!permissionGranted) {
-          const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-          deviceId = devices.length > 0 ? devices[devices.length - 1].deviceId : undefined;
-        }
+        const reader   = new BrowserMultiFormatReader(hints);
+        const devices  = await BrowserMultiFormatReader.listVideoInputDevices();
+        const deviceId = devices.length > 0 ? devices[devices.length - 1].deviceId : undefined;
 
         if (cancelled || !videoRef.current) return;
 
@@ -1135,7 +1113,7 @@ function BarcodeScanner({
         controlsRef.current = controls;
       } catch {
         if (!cancelled) {
-          setErrMsg("Camera access is required to scan barcodes. Please enable in Settings.");
+          setErrMsg("Camera access denied or unavailable.");
           setStatus("error");
         }
       }
