@@ -359,6 +359,26 @@ export function WeightStepsModule() {
     setCommentary(null);
     setInsightReady(true);
 
+    // Fetch today's food and steps to compute calories remaining correctly
+    let caloriesRemaining: number | null = null;
+    if (user && supabase && profile.daily_calories != null) {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+
+      const [foodRes, stepsRes] = await Promise.all([
+        supabase.from("food_logs").select("calories").eq("user_id", user.id).gte("logged_at", start).lt("logged_at", end),
+        supabase.from("steps_logs").select("steps").eq("user_id", user.id).gte("logged_at", start).lt("logged_at", end).order("logged_at", { ascending: false }).limit(1),
+      ]);
+
+      const caloriesConsumed = (foodRes.data ?? []).reduce((s: number, r: { calories: number }) => s + (r.calories || 0), 0);
+      const todaySteps = stepsRes.data?.[0]?.steps ?? 0;
+      const weight = lastPoint.weight;
+      // Same formula as Dashboard: MFP-equivalent ~151 cal for 5,000 steps at 223 lbs
+      const stepsCalories = Math.round(todaySteps * 0.000135 * weight);
+      caloriesRemaining = profile.daily_calories + stepsCalories - caloriesConsumed;
+    }
+
     try {
       const res = await fetch("/api/trend-commentary", {
         method: "POST",
@@ -374,6 +394,7 @@ export function WeightStepsModule() {
           numDays,
           weeklyPaceGoal: profile.weekly_pace,
           rangeLabel: rangeLabelMap[range],
+          caloriesRemaining,
         }),
       });
       const data = await res.json();

@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       numDays,
       weeklyPaceGoal,
       rangeLabel,
+      caloriesRemaining,
     } = body;
 
     const weeklyChange =
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
         ? `Lowest weight: ${bestWeight.toFixed(1)} lbs on ${bestDay}`
         : null,
       weeklyPaceGoal != null ? `User's weekly pace goal: lose ${weeklyPaceGoal} lbs/week` : null,
+      caloriesRemaining != null ? `Today's calories remaining (base + steps earned − consumed): ${Math.round(caloriesRemaining)} kcal` : null,
     ].filter((l): l is string => l != null);
 
     const prompt = `You are a supportive fitness coach giving a brief trend update to someone tracking their weight loss. Based on this data, write 2-3 sentences of commentary. Be conversational, encouraging but honest.
