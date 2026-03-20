@@ -49,7 +49,7 @@ export default function AskAIPage() {
     async function loadContext() {
       const { start, end } = todayRange();
 
-      const [profileRes, weightRes, foodRes] = await Promise.all([
+      const [profileRes, weightRes, foodRes, stepsRes] = await Promise.all([
         supabase
           .from("profiles")
           .select(
@@ -69,6 +69,14 @@ export default function AskAIPage() {
           .eq("user_id", user.id)
           .gte("logged_at", start)
           .lt("logged_at", end),
+        supabase
+          .from("steps_logs")
+          .select("steps")
+          .eq("user_id", user.id)
+          .gte("logged_at", start)
+          .lt("logged_at", end)
+          .order("logged_at", { ascending: false })
+          .limit(1),
       ]);
 
       const profile = profileRes.data;
@@ -85,8 +93,11 @@ export default function AskAIPage() {
           : null;
 
       const dailyCalories = profile?.daily_calories ?? null;
+      // Same formula as Dashboard: MFP-equivalent ~151 cal for 5,000 steps at 223 lbs
+      const todaySteps = stepsRes.data?.[0]?.steps ?? 0;
+      const stepsCalories = latestWeight ? Math.round(todaySteps * 0.000135 * latestWeight) : 0;
       const caloriesRemaining =
-        dailyCalories != null ? dailyCalories - caloriesConsumed : null;
+        dailyCalories != null ? dailyCalories + stepsCalories - caloriesConsumed : null;
 
       setUserContext({
         firstName: profile?.first_name ?? null,
