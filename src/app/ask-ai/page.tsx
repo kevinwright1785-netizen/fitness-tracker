@@ -106,9 +106,16 @@ export default function AskAIPage() {
     loadContext();
   }, [user]);
 
-  // ── Auto-scroll ────────────────────────────────────────────────────────────
+  // ── Scroll to top on mount ─────────────────────────────────────────────────
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // ── Auto-scroll — only when there are messages ─────────────────────────────
+
+  useEffect(() => {
+    if (messages.length === 0) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
