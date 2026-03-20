@@ -87,8 +87,8 @@ export default function ProfilePage() {
     setMessage(null);
 
     const heightCm = Number(heightFt || 0) * 30.48 + Number(heightIn || 0) * 2.54;
-    // Use starting weight for TDEE calculation (set at onboarding, stable baseline)
-    const weightLbs = startingWeight ?? 170;
+    // Use most recent weight log entry; fall back to starting weight if none exists
+    const weightLbs = latestWeightLbs ?? startingWeight ?? 170;
     const age = dob ? calculateAge(dob) : 30;
 
     const tdee = calculateTDEE({
