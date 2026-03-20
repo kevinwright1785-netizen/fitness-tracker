@@ -51,6 +51,7 @@ select,
 textarea,
 button {
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Prevent iOS Safari auto-zoom on focused inputs (requires >= 16px) */

@@ -1546,7 +1546,7 @@ function AddFoodSheet({
               <button
                 key={opt.id}
                 onClick={() => setMode(opt.id)}
-                className="flex min-h-[88px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-3.5 text-left hover:bg-slate-700"
+                className="flex min-h-[88px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-3.5 text-left hover:bg-slate-700 appearance-none"
               >
                 <span className="text-2xl leading-none">{opt.icon}</span>
                 <span className="mt-1 text-sm font-semibold text-white">{opt.label}</span>
@@ -1789,7 +1789,7 @@ function AddIngredientSheet({
           <div className="grid grid-cols-2 gap-2">
             {options.map(opt => (
               <button key={opt.id} onClick={() => setMode(opt.id)}
-                className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
+                className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700 appearance-none">
                 <span className="text-2xl leading-none">{opt.icon}</span>
                 <span className="mt-1 text-xs font-semibold text-white">{opt.label}</span>
                 <span className="text-[10px] text-slate-400">{opt.sub}</span>
