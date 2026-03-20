@@ -27,10 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <script dangerouslySetInnerHTML={{ __html: `
-          document.documentElement.style.backgroundColor = '#020617';
-          document.body.style.backgroundColor = '#020617';
-        ` }} />
+        <script dangerouslySetInnerHTML={{ __html: `(function(){document.documentElement.setAttribute('style','background-color:#020617 !important');document.write('<style>*{background-color:#020617}html,body{background-color:#020617 !important;min-height:100vh}</style>');})()` }} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         {/* iPhone 16 Pro Max — exact pixel match required for iOS to use it */}
         <link rel="apple-touch-startup-image" href="/apple-splash-1290-2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
