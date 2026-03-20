@@ -2710,7 +2710,11 @@ export function FoodLogPage() {
             expanded={expandedMeal === meal.type}
             isToday={isToday}
             onToggle={() => setExpandedMeal(prev => prev === meal.type ? null : meal.type)}
-            onAddFood={() => { setExpandedMeal(meal.type); setSheetMeal(meal); setSheetKey(k => k + 1); }}
+            onAddFood={() => {
+              setExpandedMeal(meal.type);
+              setSheetMeal(null);
+              setTimeout(() => { setSheetMeal(meal); setSheetKey(k => k + 1); }, 0);
+            }}
             onCopyFrom={() => { setExpandedMeal(meal.type); setCopyFromMeal(meal); }}
             onAddFromFavorites={() => { setExpandedMeal(meal.type); setFavoritesSheetMeal(meal); }}
             onDelete={handleDelete}
