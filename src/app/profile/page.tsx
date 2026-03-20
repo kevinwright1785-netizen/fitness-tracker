@@ -117,7 +117,7 @@ export default function ProfilePage() {
         gender: gender || null,
         goal,
         goal_weight: goalWeight ? Number(goalWeight) : null,
-        weekly_pace: goal === "lose" ? Number(weeklyPace || "1") : null,
+        weekly_pace: Number(weeklyPace || "1"),
         activity_level: activity,
         daily_calories: tdee,
         daily_protein: macros.protein,
