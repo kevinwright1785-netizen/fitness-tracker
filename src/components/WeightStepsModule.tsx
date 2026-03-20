@@ -33,6 +33,10 @@ type Profile = {
   current_weight: number | null;
   goal_weight: number | null;
   weekly_pace: number | null;
+  daily_calories: number | null;
+  daily_protein: number | null;
+  daily_carbs: number | null;
+  daily_fat: number | null;
   dob: string | null;
   height_ft: number | null;
   height_in: number | null;
@@ -268,7 +272,7 @@ export function WeightStepsModule() {
     if (!user || !supabase) return;
     supabase
       .from("profiles")
-      .select("current_weight, goal_weight, weekly_pace, dob, height_ft, height_in, gender, activity_level, goal")
+      .select("current_weight, goal_weight, weekly_pace, daily_calories, daily_protein, daily_carbs, daily_fat, dob, height_ft, height_in, gender, activity_level, goal")
       .eq("id", user.id)
       .single()
       .then(({ data }: { data: Profile | null }) => {
