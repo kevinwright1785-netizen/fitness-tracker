@@ -188,13 +188,9 @@ export default function AskAIPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    // Outer container: full screen height, flex column, no overflow
-    <div
-      className="flex flex-col bg-slate-950 px-4"
-      style={{ height: '100dvh', paddingTop: '50px' }}
-    >
-      {/* TOP: Header — fixed height, never shrinks */}
-      <header className="mb-3 flex flex-shrink-0 items-center gap-2">
+    <div className="flex min-h-svh flex-col bg-slate-950 px-4 pt-4 pb-24">
+      {/* Header */}
+      <header className="mb-3 flex items-center gap-2 pt-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20">
           <SparkleIcon />
         </div>
@@ -204,8 +200,8 @@ export default function AskAIPage() {
         </div>
       </header>
 
-      {/* MIDDLE: Chat messages — grows to fill all remaining space, scrollable */}
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto pb-4">
+      {/* Chat area */}
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto pb-2">
         {messages.length === 0 && (
           <p className="pt-2 text-center text-sm text-slate-400">
             Ask me anything about nutrition, weight loss, exercise, or food choices.
@@ -240,11 +236,10 @@ export default function AskAIPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* BOTTOM: Input bar — in normal flow, margin-bottom clears the fixed bottom nav */}
+      {/* Input bar */}
       <form
         onSubmit={handleSubmit}
-        className="mt-2 flex flex-shrink-0 items-end gap-2 rounded-2xl bg-slate-900 p-2 ring-1 ring-slate-800"
-        style={{ marginBottom: '80px' }}
+        className="mt-2 flex items-end gap-2 rounded-2xl bg-slate-900 p-2 ring-1 ring-slate-800"
       >
         <textarea
           ref={inputRef}
@@ -265,6 +260,7 @@ export default function AskAIPage() {
           <SendIcon />
         </button>
       </form>
+
     </div>
   );
 }
