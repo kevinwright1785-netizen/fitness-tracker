@@ -798,33 +798,48 @@ function USDASearch({
 
   async function searchRecent(q: string): Promise<SearchFood[]> {
     if (!user || !supabase) return [];
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+
+    // Match rows where ANY word appears in food_name (OR across words)
+    const orFilter = words.map(w => `food_name.ilike.%${w}%`).join(",");
     const { data } = await supabase
       .from("food_logs")
       .select("food_name, calories, protein, carbs, fat, serving_qty")
       .eq("user_id", user.id)
-      .ilike("food_name", `%${q}%`)
+      .or(orFilter)
       .order("logged_at", { ascending: false })
-      .limit(25); // fetch enough to deduplicate, then keep top 5 unique names
+      .limit(50); // fetch enough to deduplicate and rank
+
+    type Row = { food_name: string; calories: number; protein: number | null; carbs: number | null; fat: number | null; serving_qty: number | null };
+
+    // Deduplicate by name (keep most-recent entry), then rank by word-match count
     const seen = new Set<string>();
-    const recent: SearchFood[] = [];
-    for (const entry of (data ?? []) as { food_name: string; calories: number; protein: number | null; carbs: number | null; fat: number | null; serving_qty: number | null }[]) {
-      const key = entry.food_name.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      recent.push({
-        id:           `recent-${entry.food_name}`,
-        name:         entry.food_name,
+    const unique: Row[] = [];
+    for (const row of (data ?? []) as Row[]) {
+      const key = row.food_name.toLowerCase();
+      if (!seen.has(key)) { seen.add(key); unique.push(row); }
+    }
+
+    return unique
+      .map(row => {
+        const nameLower = row.food_name.toLowerCase();
+        const score = words.filter(w => nameLower.includes(w)).length;
+        return { row, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ row }): SearchFood => ({
+        id:           `recent-${row.food_name}`,
+        name:         row.food_name,
         brand:        "",
         servingLabel: "As previously logged",
-        cal:          entry.calories,
-        protein:      entry.protein  ?? 0,
-        carbs:        entry.carbs    ?? 0,
-        fat:          entry.fat      ?? 0,
-        source:       "OFF", // satisfies type; rendered in its own section without a badge
-      });
-      if (recent.length === 5) break;
-    }
-    return recent;
+        cal:          row.calories,
+        protein:      row.protein  ?? 0,
+        carbs:        row.carbs    ?? 0,
+        fat:          row.fat      ?? 0,
+        source:       "OFF",
+      }));
   }
 
   async function doSearch(q: string) {
