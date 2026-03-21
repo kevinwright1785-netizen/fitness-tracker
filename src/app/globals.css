@@ -88,3 +88,9 @@ textarea {
   position: absolute;
   animation: scan 2s ease-in-out infinite;
 }
+
+.recharts-wrapper, .recharts-surface {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  user-select: none !important;
+}

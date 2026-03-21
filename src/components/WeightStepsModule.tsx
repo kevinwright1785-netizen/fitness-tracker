@@ -623,10 +623,11 @@ export function WeightStepsModule() {
             onTouchStart={handleChartTouch}
             style={{ outline: 'none', WebkitTapHighlightColor: 'transparent', userSelect: 'none', WebkitUserSelect: 'none' }}
           >
-          <ResponsiveContainer width="100%" height={230}>
+          <ResponsiveContainer width="100%" height={230} style={{ outline: 'none' }}>
             <LineChart
               data={rangePoints}
               margin={{ top: 8, right: 20, left: 10, bottom: 40 }}
+              style={{ outline: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTapHighlightColor: 'transparent' }}
             >
               {yTicks.map((tick) => (
                 <ReferenceLine
