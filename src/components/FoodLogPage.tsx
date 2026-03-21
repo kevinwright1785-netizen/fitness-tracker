@@ -675,6 +675,13 @@ type SearchFood = {
   fat: number;
 };
 
+async function searchOFF(query: string): Promise<SearchFood[]> {
+  const res = await fetch(`/api/food-search?query=${encodeURIComponent(query)}`);
+  if (!res.ok) return [];
+  const data = await res.json() as { results: SearchFood[] };
+  return data.results ?? [];
+}
+
 async function searchUSDA(query: string): Promise<SearchFood[]> {
   const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
   const res = await fetch(
@@ -712,6 +719,14 @@ function scoreRelevance(food: SearchFood, words: string[]): number {
     else if (brandLower.includes(w)) score += 1; // brand-only match — low value
   }
   return score;
+}
+
+function rankAndSlice(foods: SearchFood[], words: string[]): SearchFood[] {
+  return foods
+    .map(f => ({ f, score: scoreRelevance(f, words) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 15)
+    .map(({ f }) => f);
 }
 
 // ─── Food Search ───────────────────────────────────────────────────────────────
@@ -784,19 +799,36 @@ function USDASearch({
     if (!q.trim()) { setResults([]); return; }
     setSearching(true);
     setResults([]);
+
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+
+    // Fire both in parallel. OFF has a hard 3-second timeout server-side.
+    const usdaPromise = searchUSDA(q);
+    const offPromise  = searchOFF(q);
+
+    // Show USDA results as soon as they arrive, then stop the spinner.
+    let usdaFoods: SearchFood[] = [];
     try {
-      const foods = await searchUSDA(q);
-      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-      const sorted = foods
-        .map(f => ({ f, score: scoreRelevance(f, words) }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 15)
-        .map(({ f }) => f);
-      setResults(sorted);
-    } catch {
-      // leave results empty
-    }
+      usdaFoods = await usdaPromise;
+      setResults(rankAndSlice(usdaFoods, words));
+    } catch { /* show nothing until OFF resolves */ }
     setSearching(false);
+
+    // Wait for OFF (resolves within 3s max due to server-side AbortController).
+    // If it adds new results, merge and re-rank — no spinner needed.
+    try {
+      const offFoods = await offPromise;
+      if (offFoods.length > 0) {
+        const usdaIds = new Set(usdaFoods.map(f => f.id));
+        const usdaNames = new Set(usdaFoods.map(f => f.name.toLowerCase().replace(/\s+/g, "")));
+        const newOff = offFoods.filter(
+          f => !usdaIds.has(f.id) && !usdaNames.has(f.name.toLowerCase().replace(/\s+/g, ""))
+        );
+        if (newOff.length > 0) {
+          setResults(rankAndSlice([...usdaFoods, ...newOff], words));
+        }
+      }
+    } catch { /* OFF timed out or failed — USDA results already shown */ }
   }
 
   function onQueryChange(e: React.ChangeEvent<HTMLInputElement>) {
