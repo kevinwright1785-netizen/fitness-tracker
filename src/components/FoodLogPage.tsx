@@ -739,18 +739,20 @@ function USDASearch({
   onSave: (data: LogPayload) => Promise<void>;
   onBack: () => void;
 }) {
+  const { user } = useAuth();
   const [_savedSearch] = useState(() =>
-    readSession<{ query: string; selected: SearchFood | null; qty: number; results: SearchFood[] }>(
-      "search", { query: "", selected: null, qty: 1, results: [] }
+    readSession<{ query: string; selected: SearchFood | null; qty: number; results: SearchFood[]; recentFoods: SearchFood[] }>(
+      "search", { query: "", selected: null, qty: 1, results: [], recentFoods: [] }
     )
   );
-  const [query,     setQuery]     = useState(_savedSearch.query);
-  const [results,   setResults]   = useState<SearchFood[]>(_savedSearch.results);
-  const [searching, setSearching] = useState(false);
-  const [selected,  setSelected]  = useState<SearchFood | null>(_savedSearch.selected);
-  const [qty,       setQty]       = useState(_savedSearch.qty);
-  const [rawQty,    setRawQty]    = useState(String(_savedSearch.qty));
-  const [saving,    setSaving]    = useState(false);
+  const [query,       setQuery]       = useState(_savedSearch.query);
+  const [results,     setResults]     = useState<SearchFood[]>(_savedSearch.results);
+  const [recentFoods, setRecentFoods] = useState<SearchFood[]>(_savedSearch.recentFoods);
+  const [searching,   setSearching]   = useState(false);
+  const [selected,    setSelected]    = useState<SearchFood | null>(_savedSearch.selected);
+  const [qty,         setQty]         = useState(_savedSearch.qty);
+  const [rawQty,      setRawQty]      = useState(String(_savedSearch.qty));
+  const [saving,      setSaving]      = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baseRef = useRef({ cal: 0, protein: 0, carbs: 0, fat: 0 });
 
@@ -770,11 +772,11 @@ function USDASearch({
 
   useEffect(() => {
     function handleVisibility() {
-      if (document.hidden) writeSession("search", { query, selected, qty, results });
+      if (document.hidden) writeSession("search", { query, selected, qty, results, recentFoods });
     }
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [query, selected, qty, results]);
+  }, [query, selected, qty, results, recentFoods]);
 
   // Scaled nutrition fields
   const cal     = Math.round(baseRef.current.cal     * qty);
@@ -794,24 +796,59 @@ function USDASearch({
     setRawQty(String(v));
   }
 
+  async function searchRecent(q: string): Promise<SearchFood[]> {
+    if (!user || !supabase) return [];
+    const { data } = await supabase
+      .from("food_logs")
+      .select("food_name, calories, protein, carbs, fat, serving_qty")
+      .eq("user_id", user.id)
+      .ilike("food_name", `%${q}%`)
+      .order("logged_at", { ascending: false })
+      .limit(25); // fetch enough to deduplicate, then keep top 5 unique names
+    const seen = new Set<string>();
+    const recent: SearchFood[] = [];
+    for (const entry of (data ?? []) as { food_name: string; calories: number; protein: number | null; carbs: number | null; fat: number | null; serving_qty: number | null }[]) {
+      const key = entry.food_name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      recent.push({
+        id:           `recent-${entry.food_name}`,
+        name:         entry.food_name,
+        brand:        "",
+        servingLabel: "As previously logged",
+        cal:          entry.calories,
+        protein:      entry.protein  ?? 0,
+        carbs:        entry.carbs    ?? 0,
+        fat:          entry.fat      ?? 0,
+        source:       "OFF", // satisfies type; rendered in its own section without a badge
+      });
+      if (recent.length === 5) break;
+    }
+    return recent;
+  }
+
   async function doSearch(q: string) {
-    if (!q.trim()) { setResults([]); return; }
+    if (!q.trim()) { setResults([]); setRecentFoods([]); return; }
     setSearching(true);
     setResults([]);
-    try {
-      // Show OFF results immediately
-      const offFoods = await searchOFF(q);
-      setResults(offFoods);
-      // Only fetch USDA if OFF came back thin
-      if (offFoods.length < 5) {
-        const usdaFoods = await searchUSDA(q);
-        const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-        const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-        if (extra.length > 0) setResults([...offFoods, ...extra]);
-      }
-    } catch {
-      // leave whatever was already shown
-    }
+    setRecentFoods([]);
+    // Run recent-logs lookup and external API search in parallel
+    const [recent] = await Promise.all([
+      searchRecent(q).then(r => { setRecentFoods(r); return r; }),
+      (async () => {
+        try {
+          const offFoods = await searchOFF(q);
+          setResults(offFoods);
+          if (offFoods.length < 5) {
+            const usdaFoods = await searchUSDA(q);
+            const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            if (extra.length > 0) setResults([...offFoods, ...extra]);
+          }
+        } catch { /* leave whatever was already shown */ }
+      })(),
+    ]);
+    void recent; // used via setRecentFoods above
     setSearching(false);
   }
 
@@ -916,20 +953,58 @@ function USDASearch({
         </div>
       )}
       <div className="max-h-[40vh] space-y-1 overflow-y-auto">
-        {results.map(food => (
-          <button key={food.id} onClick={() => selectFood(food)}
-            className="flex min-h-[52px] w-full items-center gap-3 rounded-xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-white">{food.name}</p>
-              {food.brand && <p className="truncate text-xs text-slate-400">{food.brand}</p>}
-            </div>
-            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${food.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
-              {food.source}
-            </span>
-            <span className="shrink-0 text-sm font-bold text-emerald-400">{food.cal} cal</span>
-          </button>
-        ))}
-        {!searching && query && results.length === 0 && (
+        {/* Recently logged — shown first, no source badge */}
+        {recentFoods.length > 0 && (
+          <>
+            <p className="px-1 pt-1 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Recently logged
+            </p>
+            {recentFoods.map(food => (
+              <button key={food.id} onClick={() => selectFood(food)}
+                className="flex min-h-[52px] w-full items-center gap-3 rounded-xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                  strokeLinecap="round" strokeLinejoin="round"
+                  className="h-4 w-4 shrink-0 text-slate-500">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{food.name}</p>
+                <span className="shrink-0 text-sm font-bold text-emerald-400">{food.cal} cal</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {/* API results — deduplicated against recently logged */}
+        {(() => {
+          const recentNames = new Set(recentFoods.map(f => f.name.toLowerCase()));
+          const apiResults = results.filter(f => !recentNames.has(f.name.toLowerCase()));
+          if (apiResults.length === 0) return null;
+          return (
+            <>
+              {recentFoods.length > 0 && (
+                <p className="px-1 pt-2 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  From database
+                </p>
+              )}
+              {apiResults.map(food => (
+                <button key={food.id} onClick={() => selectFood(food)}
+                  className="flex min-h-[52px] w-full items-center gap-3 rounded-xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-white">{food.name}</p>
+                    {food.brand && <p className="truncate text-xs text-slate-400">{food.brand}</p>}
+                  </div>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${food.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
+                    {food.source}
+                  </span>
+                  <span className="shrink-0 text-sm font-bold text-emerald-400">{food.cal} cal</span>
+                </button>
+              ))}
+            </>
+          );
+        })()}
+
+        {!searching && query && results.length === 0 && recentFoods.length === 0 && (
           <p className="py-4 text-center text-sm text-slate-500">No results found</p>
         )}
       </div>
