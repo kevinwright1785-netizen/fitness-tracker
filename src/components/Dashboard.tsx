@@ -617,96 +617,101 @@ export function Dashboard() {
           role="button"
           aria-label="Go to food log"
         >
-          <CalorieRing
-            consumed={totals.calories}
-            goal={baseCalories}
-            stepsCalories={stepsCalories}
-          />
+          {splashDataReady ? (
+            <CalorieRing
+              consumed={totals.calories}
+              goal={baseCalories}
+              stepsCalories={stepsCalories}
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-4 py-2">
+              <div className="h-[220px] w-[220px] rounded-full bg-slate-800 animate-pulse" />
+              <div className="h-3 w-36 rounded-full bg-slate-700 animate-pulse" />
+            </div>
+          )}
         </section>
 
         {/* C) Macros row */}
         <section className="grid grid-cols-3 gap-2">
-          {(
-            [
-              {
-                label: "Protein",
-                value: totals.protein,
-                goal: profile?.daily_protein ?? 0,
-                color: "bg-sky-500",
-                text: "text-sky-400",
-              },
-              {
-                label: "Carbs",
-                value: totals.carbs,
-                goal: profile?.daily_carbs ?? 0,
-                color: "bg-yellow-400",
-                text: "text-yellow-400",
-              },
-              {
-                label: "Fat",
-                value: totals.fat,
-                goal: profile?.daily_fat ?? 0,
-                color: "bg-rose-500",
-                text: "text-rose-400",
-              },
-            ] as const
-          ).map(({ label, value, goal, color, text }) => {
-            const remaining = Math.max(0, goal - value);
-            const pct = goal > 0 ? Math.min(100, (value / goal) * 100) : 0;
-            return (
-              <div
-                key={label}
-                className="flex flex-col gap-2 rounded-2xl bg-slate-900 px-3 py-3 ring-1 ring-slate-800"
-              >
-                <p className={`text-xs font-semibold ${text}`}>{label}</p>
-                <p className="text-xl font-bold text-white leading-none">
-                  {remaining.toFixed(0)}
-                  <span className="ml-0.5 text-xs font-normal text-slate-500">g left</span>
-                </p>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className={`h-full rounded-full ${color} transition-all`}
-                    style={{ width: `${pct}%` }}
-                  />
+          {splashDataReady ? (
+            (
+              [
+                { label: "Protein", value: totals.protein, goal: profile?.daily_protein ?? 0, color: "bg-sky-500",    text: "text-sky-400"    },
+                { label: "Carbs",   value: totals.carbs,   goal: profile?.daily_carbs   ?? 0, color: "bg-yellow-400", text: "text-yellow-400" },
+                { label: "Fat",     value: totals.fat,     goal: profile?.daily_fat     ?? 0, color: "bg-rose-500",   text: "text-rose-400"   },
+              ] as const
+            ).map(({ label, value, goal, color, text }) => {
+              const remaining = Math.max(0, goal - value);
+              const pct = goal > 0 ? Math.min(100, (value / goal) * 100) : 0;
+              return (
+                <div key={label} className="flex flex-col gap-2 rounded-2xl bg-slate-900 px-3 py-3 ring-1 ring-slate-800">
+                  <p className={`text-xs font-semibold ${text}`}>{label}</p>
+                  <p className="text-xl font-bold text-white leading-none">
+                    {remaining.toFixed(0)}
+                    <span className="ml-0.5 text-xs font-normal text-slate-500">g left</span>
+                  </p>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                    <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-[10px] text-slate-500">{value.toFixed(0)} / {goal}g</p>
                 </div>
-                <p className="text-[10px] text-slate-500">{value.toFixed(0)} / {goal}g</p>
+              );
+            })
+          ) : (
+            [0, 1, 2].map(i => (
+              <div key={i} className="flex flex-col gap-2 rounded-2xl bg-slate-900 px-3 py-3 ring-1 ring-slate-800">
+                <div className="h-2.5 w-10 rounded-full bg-slate-700 animate-pulse" />
+                <div className="h-6 w-14 rounded bg-slate-700 animate-pulse" />
+                <div className="h-1.5 w-full rounded-full bg-slate-800 animate-pulse" />
+                <div className="h-2 w-16 rounded bg-slate-700 animate-pulse" />
               </div>
-            );
-          })}
+            ))
+          )}
         </section>
 
         {/* D) Today's stats row — both cards tap to Progress */}
         <section className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => router.push("/progress")}
-            className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800 text-left hover:ring-slate-600 transition-colors"
-          >
-            <p className="text-xs font-medium text-slate-400">Current Weight</p>
-            <p className="mt-1 text-2xl font-bold text-white">
-              {displayWeight != null ? displayWeight.toFixed(1) : "—"}
-              {displayWeight != null && (
-                <span className="ml-1 text-sm font-normal text-slate-400">lbs</span>
-              )}
-            </p>
-          </button>
-          <button
-            onClick={() => router.push("/progress")}
-            className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800 text-left hover:ring-slate-600 transition-colors"
-          >
-            <p className="text-xs font-medium text-slate-400">Total Lost</p>
-            <p className="mt-1 text-2xl font-bold text-white">
-              {weightLost !== null ? Math.abs(weightLost).toFixed(1) : "—"}
-              {weightLost !== null && (
-                <span className="ml-1 text-sm font-normal text-slate-400">lbs</span>
-              )}
-            </p>
-            {weightLost !== null && weightLost > 0 && (
-              <p className="mt-0.5 text-[10px] text-emerald-400">▼ lost so far</p>
-            )}
-            {weightLost === 0 && (
-              <p className="mt-0.5 text-[10px] text-slate-500">start logging to track</p>
-            )}
-          </button>
+          {splashDataReady ? (
+            <>
+              <button
+                onClick={() => router.push("/progress")}
+                className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800 text-left hover:ring-slate-600 transition-colors"
+              >
+                <p className="text-xs font-medium text-slate-400">Current Weight</p>
+                <p className="mt-1 text-2xl font-bold text-white">
+                  {displayWeight != null ? displayWeight.toFixed(1) : "—"}
+                  {displayWeight != null && (
+                    <span className="ml-1 text-sm font-normal text-slate-400">lbs</span>
+                  )}
+                </p>
+              </button>
+              <button
+                onClick={() => router.push("/progress")}
+                className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800 text-left hover:ring-slate-600 transition-colors"
+              >
+                <p className="text-xs font-medium text-slate-400">Total Lost</p>
+                <p className="mt-1 text-2xl font-bold text-white">
+                  {weightLost !== null ? Math.abs(weightLost).toFixed(1) : "—"}
+                  {weightLost !== null && (
+                    <span className="ml-1 text-sm font-normal text-slate-400">lbs</span>
+                  )}
+                </p>
+                {weightLost !== null && weightLost > 0 && (
+                  <p className="mt-0.5 text-[10px] text-emerald-400">▼ lost so far</p>
+                )}
+                {weightLost === 0 && (
+                  <p className="mt-0.5 text-[10px] text-slate-500">start logging to track</p>
+                )}
+              </button>
+            </>
+          ) : (
+            [("Current Weight"), ("Total Lost")].map(label => (
+              <div key={label} className="rounded-2xl bg-slate-900 px-4 py-4 ring-1 ring-slate-800">
+                <div className="h-2.5 w-24 rounded-full bg-slate-700 animate-pulse" />
+                <div className="mt-3 h-7 w-20 rounded bg-slate-700 animate-pulse" />
+              </div>
+            ))
+          )}
         </section>
 
         {/* E) Exercise calories */}
@@ -714,21 +719,34 @@ export function Dashboard() {
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
             Calorie Budget
           </p>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <p className="text-[10px] text-slate-500">Base</p>
-              <p className="text-base font-bold text-white">{baseCalories}</p>
+          {splashDataReady ? (
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p className="text-[10px] text-slate-500">Base</p>
+                <p className="text-base font-bold text-white">{baseCalories}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500">Steps earned</p>
+                <p className="text-base font-bold text-emerald-400">+{stepsCalories}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500">Total</p>
+                <p className="text-base font-bold text-white">{totalCaloriesAvailable}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] text-slate-500">Steps earned</p>
-              <p className="text-base font-bold text-emerald-400">+{stepsCalories}</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="flex flex-col items-center gap-1.5">
+                  <div className="h-2.5 w-14 rounded-full bg-slate-700 animate-pulse" />
+                  <div className="h-5 w-10 rounded bg-slate-700 animate-pulse" />
+                </div>
+              ))}
             </div>
-            <div>
-              <p className="text-[10px] text-slate-500">Total</p>
-              <p className="text-base font-bold text-white">{totalCaloriesAvailable}</p>
-            </div>
-          </div>
-          {showStepsInput ? (
+          )}
+          {!splashDataReady ? (
+            <div className="mt-3 h-9 w-full rounded-xl bg-slate-800 animate-pulse" />
+          ) : showStepsInput ? (
             <form onSubmit={handleLogSteps} className="mt-3 flex gap-2">
               <input
                 type="number"
