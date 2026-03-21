@@ -284,16 +284,18 @@ export default function ProfilePage() {
                 className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-300">Weekly pace (lbs/week)</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={weeklyPace}
-                onChange={(e) => setWeeklyPace(e.target.value)}
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
+            {goal === "lose" && (
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">Weekly pace (lbs/week)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={weeklyPace}
+                  onChange={(e) => setWeeklyPace(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+            )}
           </div>
 
           <div>
