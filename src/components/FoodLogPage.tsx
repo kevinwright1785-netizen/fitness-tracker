@@ -673,15 +673,7 @@ type SearchFood = {
   protein: number;
   carbs: number;
   fat: number;
-  source: "USDA" | "OFF";
 };
-
-async function searchOFF(query: string): Promise<SearchFood[]> {
-  const res = await fetch(`/api/food-search?query=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
-  const data = await res.json() as { results: SearchFood[] };
-  return data.results ?? [];
-}
 
 async function searchUSDA(query: string): Promise<SearchFood[]> {
   const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
@@ -703,7 +695,6 @@ async function searchUSDA(query: string): Promise<SearchFood[]> {
       protein: +(getNutrient(food, NUT_PROTEIN) * mult).toFixed(1),
       carbs: +(getNutrient(food, NUT_CARBS) * mult).toFixed(1),
       fat: +(getNutrient(food, NUT_FAT) * mult).toFixed(1),
-      source: "USDA",
     };
   });
 }
@@ -780,23 +771,10 @@ function USDASearch({
     setSearching(true);
     setResults([]);
     try {
-      const offStart = Date.now();
-      const offFoods = await searchOFF(q);
-      console.log(`[FoodSearch] OFF "${q}": ${offFoods.length} results in ${Date.now() - offStart}ms`);
-      setResults(offFoods);
-      if (offFoods.length < 5) {
-        console.log(`[FoodSearch] OFF returned ${offFoods.length} results — querying USDA`);
-        const usdaStart = Date.now();
-        const usdaFoods = await searchUSDA(q);
-        console.log(`[FoodSearch] USDA "${q}": ${usdaFoods.length} results in ${Date.now() - usdaStart}ms`);
-        const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-        const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-        if (extra.length > 0) setResults([...offFoods, ...extra]);
-      } else {
-        console.log(`[FoodSearch] OFF returned ${offFoods.length} results — skipping USDA`);
-      }
-    } catch (err) {
-      console.log(`[FoodSearch] error:`, err);
+      const foods = await searchUSDA(q);
+      setResults(foods);
+    } catch {
+      // leave results empty
     }
     setSearching(false);
   }
@@ -826,9 +804,6 @@ function USDASearch({
             <p className="truncate text-sm font-bold text-white">{selected.name}</p>
             {selected.brand && <p className="truncate text-xs text-slate-400">{selected.brand}</p>}
           </div>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${selected.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
-            {selected.source}
-          </span>
         </div>
 
         <div className="rounded-2xl bg-slate-800 px-4 py-3 space-y-2">
@@ -909,9 +884,6 @@ function USDASearch({
               <p className="truncate text-sm font-medium text-white">{food.name}</p>
               {food.brand && <p className="truncate text-xs text-slate-400">{food.brand}</p>}
             </div>
-            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${food.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
-              {food.source}
-            </span>
             <span className="shrink-0 text-sm font-bold text-emerald-400">{food.cal} cal</span>
           </button>
         ))}
