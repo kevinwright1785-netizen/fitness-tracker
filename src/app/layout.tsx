@@ -6,11 +6,11 @@ import { BottomNav } from "@/components/BottomNav";
 
 export const viewport: Viewport = {
   viewportFit: "cover",
+  themeColor: '#000000',
 };
 
 export const metadata: Metadata = {
   title: "TrackRight",
-  themeColor: '#020617',
   description: "Track food, macros, weight, and steps with TrackRight.",
   manifest: "/manifest.json",
   appleWebApp: {
@@ -28,6 +28,8 @@ export default function RootLayout({
   return (
     <html lang="en" style={{ backgroundColor: '#020617' }}>
       <head>
+        <meta name="theme-color" content="#000000" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         {/* iPhone 16 Pro Max — exact pixel match required for iOS to use it */}
         <link rel="apple-touch-startup-image" href="/apple-splash-1290-2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
