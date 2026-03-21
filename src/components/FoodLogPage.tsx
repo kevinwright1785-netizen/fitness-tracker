@@ -673,13 +673,33 @@ type SearchFood = {
   protein: number;
   carbs: number;
   fat: number;
+  source: "USDA" | "OFF";
 };
 
 async function searchOFF(query: string): Promise<SearchFood[]> {
-  const res = await fetch(`/api/food-search?query=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
-  const data = await res.json() as { results: SearchFood[] };
-  return data.results ?? [];
+  const res = await fetch(
+    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&action=process&json=1&page_size=10&sort_by=unique_scans_n&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`
+  );
+  const data = await res.json();
+  const products: Record<string, unknown>[] = data.products ?? [];
+  return products
+    .filter(p => p.product_name)
+    .map((p): SearchFood => {
+      const n = (p.nutriments ?? {}) as Record<string, number>;
+      const servingQty = parseFloat(String(p.serving_quantity ?? "")) || 100;
+      const mult = servingQty / 100;
+      return {
+        id: `off-${String(p.code ?? p.product_name)}`,
+        name: String(p.product_name ?? ""),
+        brand: String(p.brands ?? ""),
+        servingLabel: String(p.serving_size ?? `${servingQty}g`),
+        cal: Math.round((n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0) * mult),
+        protein: +((n.proteins_100g ?? n.proteins ?? 0) * mult).toFixed(1),
+        carbs: +((n.carbohydrates_100g ?? n.carbohydrates ?? 0) * mult).toFixed(1),
+        fat: +((n.fat_100g ?? n.fat ?? 0) * mult).toFixed(1),
+        source: "OFF",
+      };
+    });
 }
 
 async function searchUSDA(query: string): Promise<SearchFood[]> {
@@ -702,32 +722,11 @@ async function searchUSDA(query: string): Promise<SearchFood[]> {
       protein: +(getNutrient(food, NUT_PROTEIN) * mult).toFixed(1),
       carbs: +(getNutrient(food, NUT_CARBS) * mult).toFixed(1),
       fat: +(getNutrient(food, NUT_FAT) * mult).toFixed(1),
+      source: "USDA",
     };
   });
 }
 
-
-// Score a result against the query words.
-// Words matched in the food name count double vs. brand-only matches,
-// so "Great Value Jelly" ranks jelly products above random Great Value items.
-function scoreRelevance(food: SearchFood, words: string[]): number {
-  const nameLower  = food.name.toLowerCase();
-  const brandLower = food.brand.toLowerCase();
-  let score = 0;
-  for (const w of words) {
-    if (nameLower.includes(w))       score += 2; // name match — high value
-    else if (brandLower.includes(w)) score += 1; // brand-only match — low value
-  }
-  return score;
-}
-
-function rankAndSlice(foods: SearchFood[], words: string[]): SearchFood[] {
-  return foods
-    .map(f => ({ f, score: scoreRelevance(f, words) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 15)
-    .map(({ f }) => f);
-}
 
 // ─── Food Search ───────────────────────────────────────────────────────────────
 
@@ -799,36 +798,21 @@ function USDASearch({
     if (!q.trim()) { setResults([]); return; }
     setSearching(true);
     setResults([]);
-
-    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-
-    // Fire both in parallel. OFF has a hard 3-second timeout server-side.
-    const usdaPromise = searchUSDA(q);
-    const offPromise  = searchOFF(q);
-
-    // Show USDA results as soon as they arrive, then stop the spinner.
-    let usdaFoods: SearchFood[] = [];
     try {
-      usdaFoods = await usdaPromise;
-      setResults(rankAndSlice(usdaFoods, words));
-    } catch { /* show nothing until OFF resolves */ }
-    setSearching(false);
-
-    // Wait for OFF (resolves within 3s max due to server-side AbortController).
-    // If it adds new results, merge and re-rank — no spinner needed.
-    try {
-      const offFoods = await offPromise;
-      if (offFoods.length > 0) {
-        const usdaIds = new Set(usdaFoods.map(f => f.id));
-        const usdaNames = new Set(usdaFoods.map(f => f.name.toLowerCase().replace(/\s+/g, "")));
-        const newOff = offFoods.filter(
-          f => !usdaIds.has(f.id) && !usdaNames.has(f.name.toLowerCase().replace(/\s+/g, ""))
-        );
-        if (newOff.length > 0) {
-          setResults(rankAndSlice([...usdaFoods, ...newOff], words));
-        }
+      // Show OFF results immediately
+      const offFoods = await searchOFF(q);
+      setResults(offFoods);
+      // Only fetch USDA if OFF came back thin
+      if (offFoods.length < 5) {
+        const usdaFoods = await searchUSDA(q);
+        const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+        const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+        if (extra.length > 0) setResults([...offFoods, ...extra]);
       }
-    } catch { /* OFF timed out or failed — USDA results already shown */ }
+    } catch {
+      // leave whatever was already shown
+    }
+    setSearching(false);
   }
 
   function onQueryChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -856,6 +840,9 @@ function USDASearch({
             <p className="truncate text-sm font-bold text-white">{selected.name}</p>
             {selected.brand && <p className="truncate text-xs text-slate-400">{selected.brand}</p>}
           </div>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${selected.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
+            {selected.source}
+          </span>
         </div>
 
         <div className="rounded-2xl bg-slate-800 px-4 py-3 space-y-2">
@@ -936,6 +923,9 @@ function USDASearch({
               <p className="truncate text-sm font-medium text-white">{food.name}</p>
               {food.brand && <p className="truncate text-xs text-slate-400">{food.brand}</p>}
             </div>
+            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${food.source === "USDA" ? "bg-blue-900 text-blue-300" : "bg-slate-700 text-slate-300"}`}>
+              {food.source}
+            </span>
             <span className="shrink-0 text-sm font-bold text-emerald-400">{food.cal} cal</span>
           </button>
         ))}
