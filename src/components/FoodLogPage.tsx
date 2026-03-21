@@ -740,12 +740,12 @@ function USDASearch({
   onBack: () => void;
 }) {
   const [_savedSearch] = useState(() =>
-    readSession<{ query: string; selected: SearchFood | null; qty: number }>(
-      "search", { query: "", selected: null, qty: 1 }
+    readSession<{ query: string; selected: SearchFood | null; qty: number; results: SearchFood[] }>(
+      "search", { query: "", selected: null, qty: 1, results: [] }
     )
   );
   const [query,     setQuery]     = useState(_savedSearch.query);
-  const [results,   setResults]   = useState<SearchFood[]>([]);
+  const [results,   setResults]   = useState<SearchFood[]>(_savedSearch.results);
   const [searching, setSearching] = useState(false);
   const [selected,  setSelected]  = useState<SearchFood | null>(_savedSearch.selected);
   const [qty,       setQty]       = useState(_savedSearch.qty);
@@ -754,7 +754,7 @@ function USDASearch({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baseRef = useRef({ cal: 0, protein: 0, carbs: 0, fat: 0 });
 
-  // Restore baseRef and re-trigger search when returning from background
+  // Restore baseRef on mount; only re-query if there are no cached results
   useEffect(() => {
     if (_savedSearch.selected) {
       baseRef.current = {
@@ -763,18 +763,18 @@ function USDASearch({
         carbs:   _savedSearch.selected.carbs,
         fat:     _savedSearch.selected.fat,
       };
-    } else if (_savedSearch.query) {
+    } else if (_savedSearch.query && _savedSearch.results.length === 0) {
       doSearch(_savedSearch.query);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     function handleVisibility() {
-      if (document.hidden) writeSession("search", { query, selected, qty });
+      if (document.hidden) writeSession("search", { query, selected, qty, results });
     }
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [query, selected, qty]);
+  }, [query, selected, qty, results]);
 
   // Scaled nutrition fields
   const cal     = Math.round(baseRef.current.cal     * qty);
