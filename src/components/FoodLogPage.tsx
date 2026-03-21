@@ -677,29 +677,10 @@ type SearchFood = {
 };
 
 async function searchOFF(query: string): Promise<SearchFood[]> {
-  const res = await fetch(
-    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&action=process&json=1&page_size=10&sort_by=unique_scans_n&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`
-  );
-  const data = await res.json();
-  const products: Record<string, unknown>[] = data.products ?? [];
-  return products
-    .filter(p => p.product_name)
-    .map((p): SearchFood => {
-      const n = (p.nutriments ?? {}) as Record<string, number>;
-      const servingQty = parseFloat(String(p.serving_quantity ?? "")) || 100;
-      const mult = servingQty / 100;
-      return {
-        id: `off-${String(p.code ?? p.product_name)}`,
-        name: String(p.product_name ?? ""),
-        brand: String(p.brands ?? ""),
-        servingLabel: String(p.serving_size ?? `${servingQty}g`),
-        cal: Math.round((n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0) * mult),
-        protein: +((n.proteins_100g ?? n.proteins ?? 0) * mult).toFixed(1),
-        carbs: +((n.carbohydrates_100g ?? n.carbohydrates ?? 0) * mult).toFixed(1),
-        fat: +((n.fat_100g ?? n.fat ?? 0) * mult).toFixed(1),
-        source: "OFF",
-      };
-    });
+  const res = await fetch(`/api/food-search?query=${encodeURIComponent(query)}`);
+  if (!res.ok) return [];
+  const data = await res.json() as { results: SearchFood[] };
+  return data.results ?? [];
 }
 
 async function searchUSDA(query: string): Promise<SearchFood[]> {
