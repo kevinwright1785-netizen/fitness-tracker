@@ -141,6 +141,33 @@ async function pushStreakUpdate(userId: string) {
     .eq("id", userId);
 }
 
+// ─── Add Food Session Persistence ─────────────────────────────────────────────
+// Persists sheet state to sessionStorage so the user can return to mid-flow
+// entry after switching apps (Page Visibility API).
+
+const AF_PREFIX = "trackright:addFood:";
+
+function readSession<T>(key: string, fallback: T): T {
+  try {
+    const raw = sessionStorage.getItem(AF_PREFIX + key);
+    return raw !== null ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSession(key: string, value: unknown): void {
+  try {
+    sessionStorage.setItem(AF_PREFIX + key, JSON.stringify(value));
+  } catch {}
+}
+
+function clearAddFoodSession(): void {
+  ["meal", "mode", "manual", "search", "saved"].forEach(k =>
+    sessionStorage.removeItem(AF_PREFIX + k)
+  );
+}
+
 // ─── Back button ──────────────────────────────────────────────────────────────
 
 function BackButton({ onClick }: { onClick: () => void }) {
@@ -567,13 +594,26 @@ function ManualEntry({
   onSave: (data: LogPayload) => Promise<void>;
   onBack: () => void;
 }) {
-  const [name,    setName]   = useState("");
-  const [cal,     setCal]    = useState("");
-  const [prot,    setProt]   = useState("");
-  const [carbs,   setCarbs]  = useState("");
-  const [fat,     setFat]    = useState("");
+  const [_savedManual] = useState(() =>
+    readSession<{ name: string; cal: string; prot: string; carbs: string; fat: string }>(
+      "manual", { name: "", cal: "", prot: "", carbs: "", fat: "" }
+    )
+  );
+  const [name,    setName]   = useState(_savedManual.name);
+  const [cal,     setCal]    = useState(_savedManual.cal);
+  const [prot,    setProt]   = useState(_savedManual.prot);
+  const [carbs,   setCarbs]  = useState(_savedManual.carbs);
+  const [fat,     setFat]    = useState(_savedManual.fat);
   const [saving,  setSaving] = useState(false);
   const [error,   setError]  = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden) writeSession("manual", { name, cal, prot, carbs, fat });
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [name, cal, prot, carbs, fat]);
 
   const inputCls = "w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none";
 
@@ -699,15 +739,42 @@ function USDASearch({
   onSave: (data: LogPayload) => Promise<void>;
   onBack: () => void;
 }) {
-  const [query,     setQuery]     = useState("");
+  const [_savedSearch] = useState(() =>
+    readSession<{ query: string; selected: SearchFood | null; qty: number }>(
+      "search", { query: "", selected: null, qty: 1 }
+    )
+  );
+  const [query,     setQuery]     = useState(_savedSearch.query);
   const [results,   setResults]   = useState<SearchFood[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selected,  setSelected]  = useState<SearchFood | null>(null);
-  const [qty,       setQty]       = useState(1);
-  const [rawQty,    setRawQty]    = useState("1");
+  const [selected,  setSelected]  = useState<SearchFood | null>(_savedSearch.selected);
+  const [qty,       setQty]       = useState(_savedSearch.qty);
+  const [rawQty,    setRawQty]    = useState(String(_savedSearch.qty));
   const [saving,    setSaving]    = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baseRef = useRef({ cal: 0, protein: 0, carbs: 0, fat: 0 });
+
+  // Restore baseRef and re-trigger search when returning from background
+  useEffect(() => {
+    if (_savedSearch.selected) {
+      baseRef.current = {
+        cal:     _savedSearch.selected.cal,
+        protein: _savedSearch.selected.protein,
+        carbs:   _savedSearch.selected.carbs,
+        fat:     _savedSearch.selected.fat,
+      };
+    } else if (_savedSearch.query) {
+      doSearch(_savedSearch.query);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden) writeSession("search", { query, selected, qty });
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [query, selected, qty]);
 
   // Scaled nutrition fields
   const cal     = Math.round(baseRef.current.cal     * qty);
@@ -1330,12 +1397,25 @@ function SavedMealsView({
   onBack: () => void;
 }) {
   const { user } = useAuth();
+  const [_savedMealsState] = useState(() =>
+    readSession<{ selected: SavedMeal | null; qty: number }>(
+      "saved", { selected: null, qty: 1 }
+    )
+  );
   const [meals,    setMeals]    = useState<SavedMeal[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [selected, setSelected] = useState<SavedMeal | null>(null);
-  const [qty,      setQty]      = useState(1);
-  const [rawQty,   setRawQty]   = useState("1");
+  const [selected, setSelected] = useState<SavedMeal | null>(_savedMealsState.selected);
+  const [qty,      setQty]      = useState(_savedMealsState.qty);
+  const [rawQty,   setRawQty]   = useState(String(_savedMealsState.qty));
   const [saving,   setSaving]   = useState(false);
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden) writeSession("saved", { selected, qty });
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [selected, qty]);
 
   useEffect(() => {
     async function load() {
@@ -1496,7 +1576,19 @@ function AddFoodSheet({
   onSaved: () => void;
 }) {
   const { user } = useAuth();
-  const [mode, setMode] = useState<SheetMode>("options");
+  const [mode, setMode] = useState<SheetMode>(() => {
+    // Restore mode but not barcode (camera must be re-initialized)
+    const saved = readSession<SheetMode>("mode", "options");
+    return saved !== "barcode" ? saved : "options";
+  });
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden) writeSession("mode", mode);
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [mode]);
 
   async function handleSave(data: LogPayload) {
     if (!user || !supabase) return;
@@ -2595,6 +2687,37 @@ export function FoodLogPage() {
   const isToday = selectedDate === todayISO();
   const favoriteNames = new Set(favorites.map(f => f.food_name));
 
+  // Restore AddFood sheet state when the app returns from background (iOS PWA reload)
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(AF_PREFIX + "meal");
+      if (raw) {
+        const meal = JSON.parse(raw) as typeof MEALS[number];
+        if (MEALS.some(m => m.type === meal.type)) {
+          setExpandedMeal(meal.type);
+          setSheetMeal(meal);
+          setSheetKey(k => k + 1);
+        }
+      }
+    } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save the active sheet meal when the user backgrounds the app
+  useEffect(() => {
+    function handleVisibility() {
+      if (!document.hidden) return;
+      try {
+        if (sheetMeal) {
+          sessionStorage.setItem(AF_PREFIX + "meal", JSON.stringify(sheetMeal));
+        } else {
+          sessionStorage.removeItem(AF_PREFIX + "meal");
+        }
+      } catch {}
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [sheetMeal]);
+
   const loadEntries = useCallback(async () => {
     if (!user || !supabase) return;
     setLoading(true);
@@ -2824,7 +2947,7 @@ export function FoodLogPage() {
         <AddFoodSheet
           key={sheetKey}
           meal={sheetMeal}
-          onClose={() => setSheetMeal(null)}
+          onClose={() => { clearAddFoodSession(); setSheetMeal(null); }}
           onSaved={loadEntries}
         />
       )}
