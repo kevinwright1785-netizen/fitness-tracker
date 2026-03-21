@@ -29,10 +29,21 @@ function getCachedUser(): any | null {
   return null;
 }
 
+function getCachedOnboardingComplete(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem("onboarding_complete") === "true";
+  } catch {}
+  return false;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<any | null>(getCachedUser);
-  const [loading, setLoading] = useState(true);
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const cachedUser = getCachedUser();
+  const [user, setUser] = useState<any | null>(cachedUser);
+  // If we have a cached user, skip the loading state entirely — render immediately
+  // and verify the session in the background.
+  const [loading, setLoading] = useState(!cachedUser);
+  const [onboardingComplete, setOnboardingComplete] = useState(getCachedOnboardingComplete);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -42,22 +53,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
+
+      // getSession() reads from localStorage when the token is fresh.
+      // When the token is expired (e.g. app unopened for 10+ hours) it makes a
+      // network call to refresh — that's the slow path we're working around.
       const {
         data: { session }
       } = await supabase.auth.getSession();
       const currentUser = session?.user ?? null;
-      setUser(currentUser);
 
-      if (currentUser) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("onboarding_complete")
-          .eq("id", currentUser.id)
-          .maybeSingle();
-        setOnboardingComplete(profile?.onboarding_complete ?? false);
-      } else {
+      if (!currentUser) {
+        // Background verification failed — session expired or never existed.
+        setUser(null);
         setOnboardingComplete(false);
+        localStorage.removeItem("onboarding_complete");
+        setLoading(false);
+        return;
       }
+
+      // Session is valid. Fetch onboarding status and cache it for next launch.
+      setUser(currentUser);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarding_complete")
+        .eq("id", currentUser.id)
+        .maybeSingle();
+      const complete = profile?.onboarding_complete ?? false;
+      setOnboardingComplete(complete);
+      localStorage.setItem("onboarding_complete", complete ? "true" : "false");
       setLoading(false);
     }
     init();
@@ -70,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!nextUser) {
         // Clear greeting timestamp so it shows again on the next login
         localStorage.removeItem("greetingShownAt");
+        localStorage.removeItem("onboarding_complete");
         setUser(null);
         setOnboardingComplete(false);
       } else {
@@ -82,7 +106,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq("id", nextUser.id)
           .maybeSingle()
           .then(({ data: profile }: { data: any }) => {
-            setOnboardingComplete(profile?.onboarding_complete ?? false);
+            const complete = profile?.onboarding_complete ?? false;
+            setOnboardingComplete(complete);
+            localStorage.setItem("onboarding_complete", complete ? "true" : "false");
             setLoading(false);
           });
       }
@@ -109,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function completeOnboarding() {
     setOnboardingComplete(true);
+    localStorage.setItem("onboarding_complete", "true");
   }
 
   return (
@@ -125,4 +152,3 @@ export function useAuth() {
   }
   return ctx;
 }
-
