@@ -673,14 +673,58 @@ type SearchFood = {
   protein: number;
   carbs: number;
   fat: number;
-  source: "USDA" | "FatSecret";
+  source: "USDA" | "OFF";
 };
 
-async function searchFatSecret(query: string): Promise<SearchFood[]> {
-  const res = await fetch(`/api/food-search?query=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
-  const data = await res.json() as { results?: SearchFood[] };
-  return data.results ?? [];
+async function searchOFF(query: string): Promise<SearchFood[]> {
+  const res = await fetch(
+    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&action=process&json=1&page_size=10&sort_by=unique_scans_n&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`
+  );
+  const data = await res.json();
+  const products: Record<string, unknown>[] = data.products ?? [];
+  return products
+    .filter(p => p.product_name)
+    .map((p): SearchFood => {
+      const n = (p.nutriments ?? {}) as Record<string, number>;
+      const servingQty = parseFloat(String(p.serving_quantity ?? "")) || 100;
+      const mult = servingQty / 100;
+      return {
+        id: `off-${String(p.code ?? p.product_name)}`,
+        name: String(p.product_name ?? ""),
+        brand: String(p.brands ?? ""),
+        servingLabel: String(p.serving_size ?? `${servingQty}g`),
+        cal: Math.round((n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0) * mult),
+        protein: +((n.proteins_100g ?? n.proteins ?? 0) * mult).toFixed(1),
+        carbs: +((n.carbohydrates_100g ?? n.carbohydrates ?? 0) * mult).toFixed(1),
+        fat: +((n.fat_100g ?? n.fat ?? 0) * mult).toFixed(1),
+        source: "OFF",
+      };
+    });
+}
+
+async function searchUSDA(query: string): Promise<SearchFood[]> {
+  const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
+  const res = await fetch(
+    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Branded&pageSize=25&api_key=${apiKey}`
+  );
+  const data = await res.json();
+  const foods: USDAFood[] = data.foods ?? [];
+  return foods.map((food): SearchFood => {
+    const mult = (food.servingSize && food.servingSize > 0) ? food.servingSize / 100 : 1;
+    const label = food.householdServingFullText
+      ?? (food.servingSize ? `${food.servingSize} ${food.servingSizeUnit ?? "g"}` : "100g");
+    return {
+      id: `usda-${food.fdcId}`,
+      name: food.description,
+      brand: food.brandName ?? food.brandOwner ?? "",
+      servingLabel: label,
+      cal: Math.round(getNutrient(food, NUT_ENERGY) * mult),
+      protein: +(getNutrient(food, NUT_PROTEIN) * mult).toFixed(1),
+      carbs: +(getNutrient(food, NUT_CARBS) * mult).toFixed(1),
+      fat: +(getNutrient(food, NUT_FAT) * mult).toFixed(1),
+      source: "USDA",
+    };
+  });
 }
 
 
@@ -794,7 +838,7 @@ function USDASearch({
         protein:      row.protein  ?? 0,
         carbs:        row.carbs    ?? 0,
         fat:          row.fat      ?? 0,
-        source:       "FatSecret",
+        source:       "OFF",
       }));
   }
 
@@ -803,13 +847,19 @@ function USDASearch({
     setSearching(true);
     setResults([]);
     setRecentFoods([]);
-    // Run recent-logs lookup and FatSecret search in parallel
+    // Run recent-logs lookup and external API search in parallel
     const [recent] = await Promise.all([
       searchRecent(q).then(r => { setRecentFoods(r); return r; }),
       (async () => {
         try {
-          const foods = await searchFatSecret(q);
-          setResults(foods);
+          const offFoods = await searchOFF(q);
+          setResults(offFoods);
+          if (offFoods.length < 5) {
+            const usdaFoods = await searchUSDA(q);
+            const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            if (extra.length > 0) setResults([...offFoods, ...extra]);
+          }
         } catch { /* leave whatever was already shown */ }
       })(),
     ]);
