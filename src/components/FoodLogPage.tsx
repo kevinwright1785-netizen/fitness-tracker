@@ -700,6 +700,20 @@ async function searchUSDA(query: string): Promise<SearchFood[]> {
 }
 
 
+// Score a result against the query words.
+// Words matched in the food name count double vs. brand-only matches,
+// so "Great Value Jelly" ranks jelly products above random Great Value items.
+function scoreRelevance(food: SearchFood, words: string[]): number {
+  const nameLower  = food.name.toLowerCase();
+  const brandLower = food.brand.toLowerCase();
+  let score = 0;
+  for (const w of words) {
+    if (nameLower.includes(w))       score += 2; // name match — high value
+    else if (brandLower.includes(w)) score += 1; // brand-only match — low value
+  }
+  return score;
+}
+
 // ─── Food Search ───────────────────────────────────────────────────────────────
 
 function USDASearch({
@@ -772,7 +786,13 @@ function USDASearch({
     setResults([]);
     try {
       const foods = await searchUSDA(q);
-      setResults(foods);
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const sorted = foods
+        .map(f => ({ f, score: scoreRelevance(f, words) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 15)
+        .map(({ f }) => f);
+      setResults(sorted);
     } catch {
       // leave results empty
     }
