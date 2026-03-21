@@ -621,7 +621,7 @@ export function WeightStepsModule() {
           <div
             ref={chartWrapperRef}
             onTouchStart={handleChartTouch}
-            style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+            style={{ outline: 'none', WebkitTapHighlightColor: 'transparent', userSelect: 'none', WebkitUserSelect: 'none' }}
           >
           <ResponsiveContainer width="100%" height={230}>
             <LineChart
