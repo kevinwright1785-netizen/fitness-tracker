@@ -799,18 +799,23 @@ function USDASearch({
     setSearching(true);
     setResults([]);
     try {
-      // Show OFF results immediately
+      const offStart = Date.now();
       const offFoods = await searchOFF(q);
+      console.log(`[FoodSearch] OFF "${q}": ${offFoods.length} results in ${Date.now() - offStart}ms`);
       setResults(offFoods);
-      // Only fetch USDA if OFF came back thin
       if (offFoods.length < 5) {
+        console.log(`[FoodSearch] OFF returned ${offFoods.length} results — querying USDA`);
+        const usdaStart = Date.now();
         const usdaFoods = await searchUSDA(q);
+        console.log(`[FoodSearch] USDA "${q}": ${usdaFoods.length} results in ${Date.now() - usdaStart}ms`);
         const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
         const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
         if (extra.length > 0) setResults([...offFoods, ...extra]);
+      } else {
+        console.log(`[FoodSearch] OFF returned ${offFoods.length} results — skipping USDA`);
       }
-    } catch {
-      // leave whatever was already shown
+    } catch (err) {
+      console.log(`[FoodSearch] error:`, err);
     }
     setSearching(false);
   }
