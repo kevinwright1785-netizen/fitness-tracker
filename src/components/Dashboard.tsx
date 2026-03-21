@@ -243,6 +243,9 @@ export function Dashboard() {
   // Show greeting on every fresh app launch (>30 min since last shown)
   const [showSplash, setShowSplash] = useState(() => shouldShowGreeting());
   const [splashFading, setSplashFading] = useState(false);
+  // Both must be true before the splash is allowed to fade out
+  const [splashDataReady, setSplashDataReady] = useState(false);
+  const [splashTimerFired, setSplashTimerFired] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [completionResult, setCompletionResult] = useState<CompletionResult | null>(null);
   const [showStepsInput, setShowStepsInput] = useState(false);
@@ -348,12 +351,11 @@ export function Dashboard() {
 
       if (stepsRes.data?.[0]) setStepsToday(stepsRes.data[0].steps ?? 0);
 
-      // Splash fade — record timestamp so tab-switching doesn't re-trigger
+      // Signal that all data is now in state. The splash effect below will
+      // dismiss once this AND the 2-second minimum timer have both fired.
       markGreetingShown();
-      splashTimer.current = setTimeout(() => {
-        setSplashFading(true);
-        setTimeout(() => setShowSplash(false), 500);
-      }, 2000);
+      setSplashDataReady(true);
+      splashTimer.current = setTimeout(() => setSplashTimerFired(true), 2000);
     }
 
     load();
@@ -361,6 +363,16 @@ export function Dashboard() {
       if (splashTimer.current) clearTimeout(splashTimer.current);
     };
   }, [user, authLoading]);
+
+  // ── Dismiss splash only after data is painted AND the 2-second minimum has elapsed
+  // useEffect fires after the render that set splashDataReady, so the dashboard
+  // is guaranteed to be on screen with real values before the fade begins.
+  useEffect(() => {
+    if (!showSplash || !splashDataReady || !splashTimerFired) return;
+    setSplashFading(true);
+    const t = setTimeout(() => setShowSplash(false), 500);
+    return () => clearTimeout(t);
+  }, [showSplash, splashDataReady, splashTimerFired]);
 
   // ── Streak update on food log ──────────────────────────────────────────────
 
