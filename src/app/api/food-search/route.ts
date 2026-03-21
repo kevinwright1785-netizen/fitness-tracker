@@ -64,6 +64,7 @@ async function getFatSecretToken(): Promise<string> {
     token: data.access_token,
     expiresAt: now + data.expires_in * 1000,
   };
+  console.log("[food-search] FatSecret token obtained, expires_in:", data.expires_in);
   return tokenCache.token;
 }
 
@@ -105,26 +106,42 @@ async function searchFatSecret(query: string, token: string): Promise<SearchFood
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`FatSecret search failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text();
+    console.error("[food-search] FatSecret search HTTP error:", res.status, body);
+    throw new Error(`FatSecret search failed: ${res.status}`);
+  }
 
   const data = await res.json() as {
     foods?: { food?: FatSecretFood | FatSecretFood[] };
     error?: { message: string };
   };
-  if (data.error) throw new Error(data.error.message);
+  console.log("[food-search] FatSecret raw response:", JSON.stringify(data).slice(0, 500));
+
+  if (data.error) {
+    console.error("[food-search] FatSecret API error:", data.error.message);
+    throw new Error(data.error.message);
+  }
 
   const rawFoods = data.foods?.food;
-  if (!rawFoods) return [];
+  if (!rawFoods) {
+    console.log("[food-search] FatSecret returned no foods (data.foods?.food is empty)");
+    return [];
+  }
 
   // API returns a single object when there's only one result
   const foods = Array.isArray(rawFoods) ? rawFoods : [rawFoods];
+  console.log("[food-search] FatSecret raw food count:", foods.length);
 
-  return foods
+  const result = foods
     .map((food): SearchFood | null => {
       const parsed = food.food_description
         ? parseFatSecretDescription(food.food_description)
         : null;
-      if (!parsed) return null;
+      if (!parsed) {
+        console.log("[food-search] FatSecret failed to parse description for:", food.food_name, "|", food.food_description);
+        return null;
+      }
       return {
         id:           `fs-${food.food_id}`,
         name:         food.food_name,
@@ -138,6 +155,8 @@ async function searchFatSecret(query: string, token: string): Promise<SearchFood
       };
     })
     .filter((f): f is SearchFood => f !== null);
+  console.log("[food-search] FatSecret parsed result count:", result.length, "of", foods.length);
+  return result;
 }
 
 // USDA nutrient IDs
@@ -205,30 +224,39 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "query parameter required" }, { status: 400 });
   }
 
+  console.log("[food-search] query:", query);
   try {
     const token     = await getFatSecretToken();
+    console.log("[food-search] token obtained (cached or fresh)");
     const fsResults = await searchFatSecret(query, token);
+    console.log("[food-search] FatSecret returned", fsResults.length, "usable results");
 
     if (fsResults.length >= 5) {
+      console.log("[food-search] using FatSecret results only");
       return NextResponse.json({ results: rankResults(fsResults, query) });
     }
 
     // Fewer than 5 FatSecret results — supplement with USDA
+    console.log("[food-search] FatSecret < 5 results, supplementing with USDA");
     try {
       const usdaResults = await searchUSDA(query);
+      console.log("[food-search] USDA returned", usdaResults.length, "results");
       const seen  = new Set(fsResults.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
       const extra = usdaResults.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+      console.log("[food-search] returning", fsResults.length, "FatSecret +", extra.length, "USDA results");
       return NextResponse.json({ results: rankResults([...fsResults, ...extra], query) });
-    } catch {
+    } catch (usdaErr) {
+      console.error("[food-search] USDA fallback error:", usdaErr instanceof Error ? usdaErr.message : usdaErr);
       return NextResponse.json({ results: rankResults(fsResults, query) });
     }
   } catch (err) {
-    console.error("[food-search] FatSecret error:", err instanceof Error ? err.message : err);
-    // FatSecret unavailable — fall back entirely to USDA
+    console.error("[food-search] FatSecret failed, falling back to USDA. Error:", err instanceof Error ? err.message : err);
     try {
       const usdaResults = await searchUSDA(query);
+      console.log("[food-search] USDA fallback returned", usdaResults.length, "results");
       return NextResponse.json({ results: rankResults(usdaResults, query) });
-    } catch {
+    } catch (usdaErr) {
+      console.error("[food-search] USDA fallback also failed:", usdaErr instanceof Error ? usdaErr.message : usdaErr);
       return NextResponse.json({ results: [] });
     }
   }
