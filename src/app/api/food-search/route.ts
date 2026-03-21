@@ -175,6 +175,30 @@ async function searchUSDA(query: string): Promise<SearchFood[]> {
   });
 }
 
+// Score results by how many query words appear in the food name vs brand.
+// Name matches are weighted 2x so name-specific results rank above brand-only matches.
+// Items where every query word matches (anywhere) sort to the top.
+function rankResults(results: SearchFood[], query: string): SearchFood[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return results;
+  return results
+    .map(food => {
+      const nameLower  = food.name.toLowerCase();
+      const brandLower = food.brand.toLowerCase();
+      let nameMatches = 0;
+      let brandOnlyMatches = 0;
+      for (const word of words) {
+        if (nameLower.includes(word))       nameMatches++;
+        else if (brandLower.includes(word)) brandOnlyMatches++;
+      }
+      const allMatch = nameMatches + brandOnlyMatches === words.length;
+      // Primary sort: all words matched; secondary: weighted name+brand score
+      return { food, score: (allMatch ? 1000 : 0) + nameMatches * 2 + brandOnlyMatches };
+    })
+    .sort((a, b) => b.score - a.score)
+    .map(({ food }) => food);
+}
+
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("query")?.trim();
   if (!query) {
@@ -182,11 +206,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const token    = await getFatSecretToken();
+    const token     = await getFatSecretToken();
     const fsResults = await searchFatSecret(query, token);
 
     if (fsResults.length >= 5) {
-      return NextResponse.json({ results: fsResults });
+      return NextResponse.json({ results: rankResults(fsResults, query) });
     }
 
     // Fewer than 5 FatSecret results — supplement with USDA
@@ -194,16 +218,16 @@ export async function GET(req: NextRequest) {
       const usdaResults = await searchUSDA(query);
       const seen  = new Set(fsResults.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
       const extra = usdaResults.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-      return NextResponse.json({ results: [...fsResults, ...extra] });
+      return NextResponse.json({ results: rankResults([...fsResults, ...extra], query) });
     } catch {
-      return NextResponse.json({ results: fsResults });
+      return NextResponse.json({ results: rankResults(fsResults, query) });
     }
   } catch (err) {
     console.error("[food-search] FatSecret error:", err instanceof Error ? err.message : err);
     // FatSecret unavailable — fall back entirely to USDA
     try {
       const usdaResults = await searchUSDA(query);
-      return NextResponse.json({ results: usdaResults });
+      return NextResponse.json({ results: rankResults(usdaResults, query) });
     } catch {
       return NextResponse.json({ results: [] });
     }
