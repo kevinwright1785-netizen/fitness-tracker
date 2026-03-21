@@ -10,6 +10,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "TrackRight",
+  themeColor: '#020617',
   description: "Track food, macros, weight, and steps with TrackRight.",
   manifest: "/manifest.json",
   appleWebApp: {
