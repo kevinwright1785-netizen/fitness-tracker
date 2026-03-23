@@ -680,6 +680,7 @@ type SearchFood = {
   carbs: number;
   fat: number;
   source: "USDA" | "OFF";
+  serving_qty?: number; // set for recently-logged foods; cal is total for that qty
 };
 
 async function searchOFF(query: string): Promise<SearchFood[]> {
@@ -791,10 +792,15 @@ function USDASearch({
   const fat     = +(baseRef.current.fat     * qty).toFixed(1);
 
   function selectFood(food: SearchFood) {
-    baseRef.current = { cal: food.cal, protein: food.protein, carbs: food.carbs, fat: food.fat };
+    const initialQty = food.serving_qty ?? 1;
+    // For recent foods, cal is the stored total — derive per-serving base for the stepper
+    const perServing = initialQty > 1
+      ? { cal: Math.round(food.cal / initialQty), protein: +(food.protein / initialQty).toFixed(1), carbs: +(food.carbs / initialQty).toFixed(1), fat: +(food.fat / initialQty).toFixed(1) }
+      : { cal: food.cal, protein: food.protein, carbs: food.carbs, fat: food.fat };
+    baseRef.current = perServing;
     setSelected(food);
-    setQty(1);
-    setRawQty("1");
+    setQty(initialQty);
+    setRawQty(String(initialQty));
   }
 
   function changeQty(v: number) {
@@ -845,6 +851,7 @@ function USDASearch({
         carbs:        row.carbs    ?? 0,
         fat:          row.fat      ?? 0,
         source:       "OFF",
+        serving_qty:  row.serving_qty ?? 1,
       }));
   }
 
