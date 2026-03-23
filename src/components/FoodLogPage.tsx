@@ -446,7 +446,7 @@ function FoodItem({
         }}
       >
         <span className="flex-1 truncate pr-3 text-sm text-slate-100">{entry.food_name}</span>
-        <span className="shrink-0 text-sm font-semibold text-white">{entry.calories} cal</span>
+        <span className="shrink-0 text-sm font-semibold text-white">{Math.round(entry.calories * (entry.serving_qty ?? 1))} cal</span>
 
         {/* Desktop: trash button — always visible on hover, hidden on mobile */}
         <button
@@ -492,10 +492,10 @@ function MealSection({
   onDelete: (id: string) => void;
   onEdit: (entry: FoodEntry) => void;
 }) {
-  const cal   = entries.reduce((s, e) => s + e.calories, 0);
-  const prot  = entries.reduce((s, e) => s + (e.protein ?? 0), 0);
-  const carbs = entries.reduce((s, e) => s + (e.carbs ?? 0), 0);
-  const fat   = entries.reduce((s, e) => s + (e.fat ?? 0), 0);
+  const cal   = entries.reduce((s, e) => s + e.calories * (e.serving_qty ?? 1), 0);
+  const prot  = entries.reduce((s, e) => s + (e.protein ?? 0) * (e.serving_qty ?? 1), 0);
+  const carbs = entries.reduce((s, e) => s + (e.carbs ?? 0) * (e.serving_qty ?? 1), 0);
+  const fat   = entries.reduce((s, e) => s + (e.fat ?? 0) * (e.serving_qty ?? 1), 0);
 
   return (
     <div className="overflow-hidden rounded-2xl bg-slate-900 ring-1 ring-slate-800">
@@ -1782,10 +1782,10 @@ function AddFoodSheet({
 // ─── Daily Totals ─────────────────────────────────────────────────────────────
 
 function DailyTotals({ entries, isToday }: { entries: FoodEntry[]; isToday: boolean }) {
-  const cal   = entries.reduce((s, e) => s + e.calories, 0);
-  const prot  = entries.reduce((s, e) => s + (e.protein  ?? 0), 0);
-  const carbs = entries.reduce((s, e) => s + (e.carbs    ?? 0), 0);
-  const fat   = entries.reduce((s, e) => s + (e.fat      ?? 0), 0);
+  const cal   = entries.reduce((s, e) => s + e.calories * (e.serving_qty ?? 1), 0);
+  const prot  = entries.reduce((s, e) => s + (e.protein  ?? 0) * (e.serving_qty ?? 1), 0);
+  const carbs = entries.reduce((s, e) => s + (e.carbs    ?? 0) * (e.serving_qty ?? 1), 0);
+  const fat   = entries.reduce((s, e) => s + (e.fat      ?? 0) * (e.serving_qty ?? 1), 0);
 
   return (
     <div className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800">
