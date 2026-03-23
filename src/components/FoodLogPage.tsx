@@ -827,6 +827,12 @@ function USDASearch({
       if (!seen.has(key)) { seen.add(key); unique.push(row); }
     }
 
+    console.log("[searchRecent] raw rows before normalization:");
+    for (const row of unique) {
+      const qty = (row.serving_qty && row.serving_qty > 1) ? row.serving_qty : 1;
+      console.log(`  "${row.food_name}" | stored calories: ${row.calories} | serving_qty: ${row.serving_qty} | per-serving: ${Math.round(row.calories / qty)}`);
+    }
+
     return unique
       .map(row => {
         const nameLower = row.food_name.toLowerCase();
