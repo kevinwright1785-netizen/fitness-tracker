@@ -20,6 +20,15 @@ type FoodEntry = {
   logged_at: string;
 };
 
+type MealIngredient = {
+  food_name: string;
+  calories: number;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  serving_qty: number | null;
+};
+
 type SavedMeal = {
   id: string;
   name: string;
@@ -27,6 +36,7 @@ type SavedMeal = {
   protein: number | null;
   carbs: number | null;
   fat: number | null;
+  ingredients?: MealIngredient[] | null;
 };
 
 type Favorite = {
@@ -716,7 +726,7 @@ async function searchOFF(query: string): Promise<SearchFood[]> {
 async function searchUSDA(query: string): Promise<SearchFood[]> {
   const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
   const res = await fetch(
-    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Branded&pageSize=25&api_key=${apiKey}`
+    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Branded,Foundation,Survey%20(FNDDS),SR%20Legacy&pageSize=25&api_key=${apiKey}`
   );
   const data = await res.json();
   const foods: USDAFood[] = data.foods ?? [];
@@ -840,17 +850,21 @@ function USDASearch({
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-      .map(({ row }): SearchFood => ({
-        id:           `recent-${row.food_name}`,
-        name:         row.food_name,
-        brand:        "",
-        servingLabel: "As previously logged",
-        cal:          row.calories,
-        protein:      row.protein  ?? 0,
-        carbs:        row.carbs    ?? 0,
-        fat:          row.fat      ?? 0,
-        source:       "OFF",
-      }));
+      .map(({ row }): SearchFood => {
+        // Normalize to per-single-serving values so qty starts at 1
+        const servingQty = (row.serving_qty && row.serving_qty > 0) ? row.serving_qty : 1;
+        return {
+          id:           `recent-${row.food_name}`,
+          name:         row.food_name,
+          brand:        "",
+          servingLabel: "Per serving",
+          cal:          Math.round(row.calories / servingQty),
+          protein:      row.protein  != null ? +(row.protein  / servingQty).toFixed(1) : 0,
+          carbs:        row.carbs    != null ? +(row.carbs    / servingQty).toFixed(1) : 0,
+          fat:          row.fat      != null ? +(row.fat      / servingQty).toFixed(1) : 0,
+          source:       "OFF",
+        };
+      });
   }
 
   async function doSearch(q: string) {
@@ -858,18 +872,18 @@ function USDASearch({
     setSearching(true);
     setResults([]);
     setRecentFoods([]);
-    // Run recent-logs lookup and external API search in parallel
+    // Run recent-logs lookup and USDA search in parallel; supplement with OFF if needed
     const [recent] = await Promise.all([
       searchRecent(q).then(r => { setRecentFoods(r); return r; }),
       (async () => {
         try {
-          const offFoods = await searchOFF(q);
-          setResults(offFoods);
-          if (offFoods.length < 5) {
-            const usdaFoods = await searchUSDA(q);
-            const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-            const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-            if (extra.length > 0) setResults([...offFoods, ...extra]);
+          const usdaFoods = await searchUSDA(q);
+          setResults(usdaFoods);
+          if (usdaFoods.length < 5) {
+            const offFoods = await searchOFF(q);
+            const seen = new Set(usdaFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            const extra = offFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            if (extra.length > 0) setResults([...usdaFoods, ...extra]);
           }
         } catch { /* leave whatever was already shown */ }
       })(),
@@ -1514,12 +1528,13 @@ function SavedMealsView({
       "saved", { selected: null, qty: 1 }
     )
   );
-  const [meals,    setMeals]    = useState<SavedMeal[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [selected, setSelected] = useState<SavedMeal | null>(_savedMealsState.selected);
-  const [qty,      setQty]      = useState(_savedMealsState.qty);
-  const [rawQty,   setRawQty]   = useState(String(_savedMealsState.qty));
-  const [saving,   setSaving]   = useState(false);
+  const [meals,          setMeals]          = useState<SavedMeal[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [selected,       setSelected]       = useState<SavedMeal | null>(_savedMealsState.selected);
+  const [qty,            setQty]            = useState(_savedMealsState.qty);
+  const [rawQty,         setRawQty]         = useState(String(_savedMealsState.qty));
+  const [saving,         setSaving]         = useState(false);
+  const [expandedMealId, setExpandedMealId] = useState<string | null>(null);
 
   useEffect(() => {
     function handleVisibility() {
@@ -1534,7 +1549,7 @@ function SavedMealsView({
       if (!user || !supabase) return;
       const { data } = await supabase
         .from("saved_meals")
-        .select("id, name, calories, protein, carbs, fat")
+        .select("id, name, calories, protein, carbs, fat, ingredients")
         .eq("user_id", user.id)
         .order("name");
       setMeals((data as SavedMeal[]) ?? []);
@@ -1661,16 +1676,43 @@ function SavedMealsView({
         </div>
       )}
       <div className="max-h-[45vh] space-y-1 overflow-y-auto">
-        {meals.map(meal => (
-          <button
-            key={meal.id}
-            onClick={() => selectMeal(meal)}
-            className="flex min-h-[56px] w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700"
-          >
-            <span className="flex-1 truncate text-sm font-medium text-white">{meal.name}</span>
-            <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{meal.calories} cal</span>
-          </button>
-        ))}
+        {meals.map(meal => {
+          const isExpanded = expandedMealId === meal.id;
+          const hasIngredients = meal.ingredients && meal.ingredients.length > 0;
+          return (
+            <div key={meal.id} className="rounded-xl bg-slate-800 overflow-hidden">
+              <div className="flex min-h-[56px] items-center px-4 py-3 gap-2">
+                {hasIngredients && (
+                  <button
+                    onClick={() => setExpandedMealId(isExpanded ? null : meal.id)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
+                    aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                      strokeLinecap="round" strokeLinejoin="round"
+                      className={`h-3.5 w-3.5 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                )}
+                <button onClick={() => selectMeal(meal)} className="flex flex-1 items-center justify-between text-left min-w-0">
+                  <span className="flex-1 truncate text-sm font-medium text-white">{meal.name}</span>
+                  <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{meal.calories} cal</span>
+                </button>
+              </div>
+              {isExpanded && hasIngredients && (
+                <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
+                  {meal.ingredients!.map((ing, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
+                      <span className="flex-1 truncate pr-2">{ing.food_name}{ing.serving_qty && ing.serving_qty !== 1 ? ` ×${ing.serving_qty}` : ""}</span>
+                      <span className="shrink-0 text-slate-300">{ing.calories} cal</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2091,12 +2133,20 @@ function MealBuilderSheet({
 
     setSaving(true);
     const payload = {
-      user_id:  authUser.id,
-      name:     mealName.trim(),
-      calories: totalCal,
-      protein:  totalProt  > 0 ? +totalProt.toFixed(1)  : null,
-      carbs:    totalCarbs > 0 ? +totalCarbs.toFixed(1) : null,
-      fat:      totalFat   > 0 ? +totalFat.toFixed(1)   : null,
+      user_id:     authUser.id,
+      name:        mealName.trim(),
+      calories:    totalCal,
+      protein:     totalProt  > 0 ? +totalProt.toFixed(1)  : null,
+      carbs:       totalCarbs > 0 ? +totalCarbs.toFixed(1) : null,
+      fat:         totalFat   > 0 ? +totalFat.toFixed(1)   : null,
+      ingredients: ingredients.map(i => ({
+        food_name:   i.food_name,
+        calories:    i.calories,
+        protein:     i.protein,
+        carbs:       i.carbs,
+        fat:         i.fat,
+        serving_qty: i.serving_qty,
+      })),
     };
 
     console.log("[MealBuilder] Saving payload:", JSON.stringify(payload, null, 2));
@@ -2443,11 +2493,12 @@ function MealsAndMoreSheet({
 }) {
   const { user } = useAuth();
   type View = "menu" | "saved-meals" | "favorites";
-  const [view,         setView]        = useState<View>("menu");
-  const [savedMeals,   setSavedMeals]  = useState<SavedMeal[]>([]);
-  const [favorites,    setFavorites]   = useState<Favorite[]>([]);
-  const [loadingSaved, setLoadingSaved] = useState(false);
-  const [loadingFavs,  setLoadingFavs]  = useState(false);
+  const [view,              setView]             = useState<View>("menu");
+  const [savedMeals,        setSavedMeals]       = useState<SavedMeal[]>([]);
+  const [favorites,         setFavorites]        = useState<Favorite[]>([]);
+  const [loadingSaved,      setLoadingSaved]     = useState(false);
+  const [loadingFavs,       setLoadingFavs]      = useState(false);
+  const [expandedMealId,    setExpandedMealId]   = useState<string | null>(null);
 
   async function openSavedMeals() {
     setView("saved-meals");
@@ -2455,7 +2506,7 @@ function MealsAndMoreSheet({
     setLoadingSaved(true);
     const { data } = await supabase
       .from("saved_meals")
-      .select("id, name, calories, protein, carbs, fat")
+      .select("id, name, calories, protein, carbs, fat, ingredients")
       .eq("user_id", user.id)
       .order("name");
     setSavedMeals((data as SavedMeal[]) ?? []);
@@ -2527,12 +2578,41 @@ function MealsAndMoreSheet({
           {!loadingSaved && savedMeals.length === 0 && (
             <p className="py-8 text-center text-sm text-slate-500">No saved meals yet.</p>
           )}
-          {savedMeals.map(m => (
-            <div key={m.id} className="flex min-h-[52px] items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
-              <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
-              <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
-            </div>
-          ))}
+          {savedMeals.map(m => {
+            const isExpanded = expandedMealId === m.id;
+            const hasIngredients = m.ingredients && m.ingredients.length > 0;
+            return (
+              <div key={m.id} className="rounded-xl bg-slate-800 overflow-hidden">
+                <div className="flex min-h-[52px] items-center px-4 py-3 gap-2">
+                  {hasIngredients && (
+                    <button
+                      onClick={() => setExpandedMealId(isExpanded ? null : m.id)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
+                      aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                        strokeLinecap="round" strokeLinejoin="round"
+                        className={`h-3.5 w-3.5 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  )}
+                  <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
+                  <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
+                </div>
+                {isExpanded && hasIngredients && (
+                  <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
+                    {m.ingredients!.map((ing, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
+                        <span className="flex-1 truncate pr-2">{ing.food_name}{ing.serving_qty && ing.serving_qty !== 1 ? ` ×${ing.serving_qty}` : ""}</span>
+                        <span className="shrink-0 text-slate-300">{ing.calories} cal</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

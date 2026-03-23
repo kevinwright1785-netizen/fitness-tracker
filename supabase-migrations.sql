@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS saved_meals (
   protein     numeric,
   carbs       numeric,
   fat         numeric,
+  ingredients jsonb,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 

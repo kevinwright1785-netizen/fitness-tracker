@@ -222,7 +222,7 @@ function CustomTooltip({
 export function WeightStepsModule() {
   const { user } = useAuth();
 
-  const [range, setRange] = useState<RangeKey>("1m");
+  const [range, setRange] = useState<RangeKey>("7d");
   const [weightInput, setWeightInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
