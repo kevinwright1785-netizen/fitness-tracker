@@ -20,6 +20,15 @@ type FoodEntry = {
   logged_at: string;
 };
 
+type MealIngredient = {
+  food_name: string;
+  calories: number;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  serving_qty: number | null;
+};
+
 type SavedMeal = {
   id: string;
   name: string;
@@ -27,6 +36,7 @@ type SavedMeal = {
   protein: number | null;
   carbs: number | null;
   fat: number | null;
+  ingredients?: MealIngredient[] | null;
 };
 
 type Favorite = {
@@ -2411,11 +2421,12 @@ function MealsAndMoreSheet({
 }) {
   const { user } = useAuth();
   type View = "menu" | "saved-meals" | "favorites";
-  const [view,         setView]        = useState<View>("menu");
-  const [savedMeals,   setSavedMeals]  = useState<SavedMeal[]>([]);
-  const [favorites,    setFavorites]   = useState<Favorite[]>([]);
-  const [loadingSaved, setLoadingSaved] = useState(false);
-  const [loadingFavs,  setLoadingFavs]  = useState(false);
+  const [view,           setView]          = useState<View>("menu");
+  const [savedMeals,     setSavedMeals]    = useState<SavedMeal[]>([]);
+  const [favorites,      setFavorites]     = useState<Favorite[]>([]);
+  const [loadingSaved,   setLoadingSaved]  = useState(false);
+  const [loadingFavs,    setLoadingFavs]   = useState(false);
+  const [expandedMealId, setExpandedMealId] = useState<string | null>(null);
 
   async function openSavedMeals() {
     console.log("[MealsAndMore] openSavedMeals called — user:", !!user, "supabase:", !!supabase, "current view:", view);
@@ -2428,10 +2439,10 @@ function MealsAndMoreSheet({
     setLoadingSaved(true);
     const { data, error } = await supabase
       .from("saved_meals")
-      .select("id, name, calories, protein, carbs, fat")
+      .select("id, name, calories, protein, carbs, fat, ingredients")
       .eq("user_id", user.id)
       .order("name");
-    console.log("[MealsAndMore] query result — rows:", data?.length ?? 0, "error:", error?.message ?? null);
+    console.log("[MealsAndMore] query result — rows:", data?.length ?? 0, "error:", error?.message ?? null, "first meal ingredients:", (data as SavedMeal[])?.[0]?.ingredients ?? "none");
     setSavedMeals((data as SavedMeal[]) ?? []);
     setLoadingSaved(false);
   }
@@ -2503,12 +2514,43 @@ function MealsAndMoreSheet({
           {!loadingSaved && savedMeals.length === 0 && (
             <p className="py-8 text-center text-sm text-slate-500">No saved meals yet.</p>
           )}
-          {savedMeals.map(m => (
-            <div key={m.id} className="flex min-h-[52px] items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
-              <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
-              <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
-            </div>
-          ))}
+          {savedMeals.map(m => {
+            const isExpanded = expandedMealId === m.id;
+            const ingredients = m.ingredients ?? [];
+            return (
+              <div key={m.id} className="rounded-xl bg-slate-800 overflow-hidden">
+                <button
+                  onClick={() => {
+                    console.log("[MealsAndMore] chevron tapped — meal:", m.name, "isExpanded:", isExpanded, "ingredients:", ingredients.length);
+                    setExpandedMealId(isExpanded ? null : m.id);
+                  }}
+                  className="flex min-h-[52px] w-full items-center gap-2 px-4 py-3 text-left"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                    strokeLinecap="round" strokeLinejoin="round"
+                    className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
+                  <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
+                </button>
+                {isExpanded && (
+                  <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
+                    {ingredients.length > 0 ? ingredients.map((ing, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
+                        <span className="flex-1 truncate pr-2">
+                          {ing.food_name}{ing.serving_qty && ing.serving_qty !== 1 ? ` ×${ing.serving_qty}` : ""}
+                        </span>
+                        <span className="shrink-0 text-slate-300">{ing.calories} cal</span>
+                      </div>
+                    )) : (
+                      <p className="text-xs text-slate-500 py-0.5">No ingredient data — re-save this meal to see ingredients.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
