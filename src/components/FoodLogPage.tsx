@@ -2025,7 +2025,7 @@ function MealBuilderSheet({
   const { user } = useAuth();
   const [mealName,         setMealName]         = useState("");
   const [ingredients,      setIngredients]      = useState<Ingredient[]>([]);
-  const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [ingredientMode,   setIngredientMode]   = useState<IngredientMode | null>(null);
   const [saving,           setSaving]           = useState(false);
   const [saveError,        setSaveError]        = useState<string | null>(null);
   const [saveSuccess,      setSaveSuccess]      = useState(false);
@@ -2040,6 +2040,7 @@ function MealBuilderSheet({
       fat:        data.fat,
       serving_qty: data.serving_qty,
     }]);
+    setIngredientMode(null);
   }
 
   function removeIngredient(localId: string) {
@@ -2113,123 +2114,18 @@ function MealBuilderSheet({
     }, 800);
   }
 
-  const content = (
-    <>
-      {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {onBack && (
-            <button onClick={onBack} aria-label="Back"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
-                strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-            </button>
-          )}
-          <h3 className="text-base font-bold text-white">Build a Saved Meal</h3>
-        </div>
-        <button onClick={onClose} aria-label="Close"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-            strokeLinecap="round" className="h-4 w-4">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
+  const ingredientOptions: { id: IngredientMode; icon: string; label: string; sub: string }[] = [
+    { id: "search",    icon: "🔍", label: "Search",       sub: "USDA database"    },
+    { id: "barcode",   icon: "📷", label: "Barcode",      sub: "Scan a product"   },
+    { id: "manual",    icon: "✏️", label: "Manual Entry", sub: "Enter yourself"   },
+    { id: "favorites", icon: "❤️", label: "Favorites",    sub: "Your saved foods" },
+  ];
 
-      {/* Meal name */}
-      <input
-        type="text"
-        placeholder="Meal name *"
-        value={mealName}
-        onChange={e => setMealName(e.target.value)}
-        className="mb-4 w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
-      />
+  async function handleIngredientSave(data: LogPayload) {
+    addIngredient(data);
+  }
 
-      {/* Scrollable ingredient list + add button */}
-      <div className="flex-1 overflow-y-auto pb-2 max-h-[calc(75vh-14rem)] md:max-h-[calc(80vh-14rem)]">
-        {ingredients.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-500">
-            No ingredients yet. Add one below.
-          </p>
-        ) : (
-          <div className="mb-3 space-y-1.5">
-            {ingredients.map(ing => (
-              <div key={ing.localId}
-                className="flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5">
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-sm font-medium text-white">{ing.food_name}</p>
-                  <p className="text-xs text-slate-400">
-                    {ing.calories} cal
-                    {ing.serving_qty && ing.serving_qty !== 1 ? ` · ×${ing.serving_qty}` : ""}
-                  </p>
-                </div>
-                <button type="button" onClick={() => removeIngredient(ing.localId)}
-                  aria-label="Remove ingredient"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-700 hover:text-rose-400">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-                    strokeLinecap="round" className="h-4 w-4">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <button type="button" onClick={() => setShowAddIngredient(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 py-3 text-sm font-medium text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors">
-          + Add Ingredient
-        </button>
-      </div>
-
-      {/* Running totals + save */}
-      <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">
-        {ingredients.length > 0 && (
-          <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-800 p-3 text-center">
-            <div>
-              <p className="text-[10px] text-slate-500">Cal</p>
-              <p className="text-sm font-bold text-white">{totalCal}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500">Protein</p>
-              <p className="text-sm font-bold text-sky-400">{totalProt.toFixed(0)}g</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500">Carbs</p>
-              <p className="text-sm font-bold text-yellow-400">{totalCarbs.toFixed(0)}g</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500">Fat</p>
-              <p className="text-sm font-bold text-rose-400">{totalFat.toFixed(0)}g</p>
-            </div>
-          </div>
-        )}
-        {saveError && (
-          <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-center text-sm text-rose-400">
-            {saveError}
-          </p>
-        )}
-        {saveSuccess && (
-          <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-sm text-emerald-400">
-            Meal saved!
-          </p>
-        )}
-        <button type="button" onClick={handleSave}
-          disabled={saving || ingredients.length === 0 || !mealName.trim()}
-          className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60 hover:bg-emerald-400">
-          {saving
-            ? "Saving…"
-            : saveSuccess
-            ? "Saved!"
-            : ingredients.length === 0
-            ? "Add ingredients above"
-            : `Save Meal (${ingredients.length} ingredient${ingredients.length !== 1 ? "s" : ""})`}
-        </button>
-      </div>
-    </>
-  );
+  const isAddingIngredient = ingredientMode !== null;
 
   return (
     <>
@@ -2241,17 +2137,155 @@ function MealBuilderSheet({
           suppressHydrationWarning
         >
           <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
-          {content}
+
+          {/* Header — always visible */}
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isAddingIngredient ? (
+                <button onClick={() => setIngredientMode(null)} aria-label="Back"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                    strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              ) : onBack ? (
+                <button onClick={onBack} aria-label="Back"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                    strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              ) : null}
+              <h3 className="text-base font-bold text-white">Build a Saved Meal</h3>
+            </div>
+            <button onClick={onClose} aria-label="Close"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                strokeLinecap="round" className="h-4 w-4">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Content area — switches between builder and ingredient picker */}
+          {!isAddingIngredient ? (
+            <>
+              {/* Meal name */}
+              <input
+                type="text"
+                placeholder="Meal name *"
+                value={mealName}
+                onChange={e => setMealName(e.target.value)}
+                className="mb-4 w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+              />
+
+              {/* Scrollable ingredient list + add button */}
+              <div className="flex-1 overflow-y-auto pb-2 max-h-[calc(75vh-14rem)] md:max-h-[calc(80vh-14rem)]">
+                {ingredients.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-slate-500">
+                    No ingredients yet. Add one below.
+                  </p>
+                ) : (
+                  <div className="mb-3 space-y-1.5">
+                    {ingredients.map(ing => (
+                      <div key={ing.localId}
+                        className="flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5">
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-sm font-medium text-white">{ing.food_name}</p>
+                          <p className="text-xs text-slate-400">
+                            {ing.calories} cal
+                            {ing.serving_qty && ing.serving_qty !== 1 ? ` · ×${ing.serving_qty}` : ""}
+                          </p>
+                        </div>
+                        <button type="button" onClick={() => removeIngredient(ing.localId)}
+                          aria-label="Remove ingredient"
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-700 hover:text-rose-400">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                            strokeLinecap="round" className="h-4 w-4">
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button type="button" onClick={() => setIngredientMode("options")}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 py-3 text-sm font-medium text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors">
+                  + Add Ingredient
+                </button>
+              </div>
+
+              {/* Running totals + save */}
+              <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">
+                {ingredients.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-800 p-3 text-center">
+                    <div>
+                      <p className="text-[10px] text-slate-500">Cal</p>
+                      <p className="text-sm font-bold text-white">{totalCal}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500">Protein</p>
+                      <p className="text-sm font-bold text-sky-400">{totalProt.toFixed(0)}g</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500">Carbs</p>
+                      <p className="text-sm font-bold text-yellow-400">{totalCarbs.toFixed(0)}g</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500">Fat</p>
+                      <p className="text-sm font-bold text-rose-400">{totalFat.toFixed(0)}g</p>
+                    </div>
+                  </div>
+                )}
+                {saveError && (
+                  <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-center text-sm text-rose-400">
+                    {saveError}
+                  </p>
+                )}
+                {saveSuccess && (
+                  <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-sm text-emerald-400">
+                    Meal saved!
+                  </p>
+                )}
+                <button type="button" onClick={handleSave}
+                  disabled={saving || ingredients.length === 0 || !mealName.trim()}
+                  className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60 hover:bg-emerald-400">
+                  {saving
+                    ? "Saving…"
+                    : saveSuccess
+                    ? "Saved!"
+                    : ingredients.length === 0
+                    ? "Add ingredients above"
+                    : `Save Meal (${ingredients.length} ingredient${ingredients.length !== 1 ? "s" : ""})`}
+                </button>
+              </div>
+            </>
+          ) : (
+            /* Ingredient picker — replaces content inside this sheet */
+            <div className="overflow-y-auto pb-2 max-h-[calc(70vh-4rem)] md:max-h-[calc(75vh-4rem)]">
+              {ingredientMode === "options" && (
+                <div className="grid grid-cols-2 gap-2">
+                  {ingredientOptions.map(opt => (
+                    <button key={opt.id} onClick={() => setIngredientMode(opt.id)}
+                      className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700 appearance-none">
+                      <span className="text-2xl leading-none">{opt.icon}</span>
+                      <span className="mt-1 text-xs font-semibold text-white">{opt.label}</span>
+                      <span className="text-[10px] text-slate-400">{opt.sub}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {ingredientMode === "manual"    && <ManualEntry        mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
+              {ingredientMode === "search"    && <USDASearch          mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
+              {ingredientMode === "barcode"   && <BarcodeScanner      mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
+              {ingredientMode === "favorites" && <FavoritesPickerView mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Add ingredient sub-sheet — floats above builder */}
-      {showAddIngredient && (
-        <AddIngredientSheet
-          onAdd={addIngredient}
-          onClose={() => setShowAddIngredient(false)}
-        />
-      )}
     </>
   );
 }
