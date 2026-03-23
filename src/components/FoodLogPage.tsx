@@ -369,17 +369,13 @@ function EditFoodModal({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
-
-      {/* Mobile: bottom sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
-        {content}
-      </div>
-
-      {/* Desktop: centered dialog */}
-      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
-        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 shadow-2xl ring-1 ring-slate-700">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-end pointer-events-none md:justify-center">
+        <div
+          className="pointer-events-auto w-full max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:max-w-[500px] md:rounded-3xl md:p-6 md:shadow-2xl"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
           {content}
         </div>
       </div>
@@ -1749,19 +1745,13 @@ function AddFoodSheet({
     <>
       {/* Backdrop */}
       <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
-
-      {/* Mobile: bottom sheet */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
-      >
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
-        {content}
-      </div>
-
-      {/* Desktop: centered modal */}
-      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
-        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-end pointer-events-none md:justify-center">
+        <div
+          className="pointer-events-auto w-full max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:max-w-[500px] md:rounded-3xl md:p-6 md:shadow-2xl md:max-h-[80vh] md:flex md:flex-col"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
           {content}
         </div>
       </div>
@@ -1990,13 +1980,13 @@ function AddIngredientSheet({
   return (
     <>
       <div className="fixed inset-0 z-60 bg-slate-950/70" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-[70] mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
-        {content}
-      </div>
-      <div className="fixed inset-0 z-[70] hidden items-center justify-center md:flex">
-        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+      <div className="fixed inset-0 z-[70] flex flex-col items-center justify-end pointer-events-none md:justify-center">
+        <div
+          className="pointer-events-auto w-full max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:max-w-[500px] md:rounded-3xl md:p-6 md:shadow-2xl md:max-h-[80vh] md:flex md:flex-col"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
           {content}
         </div>
       </div>
@@ -2218,13 +2208,13 @@ function MealBuilderSheet({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
-        {content}
-      </div>
-      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
-        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-end pointer-events-none md:justify-center">
+        <div
+          className="pointer-events-auto w-full max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:max-w-[500px] md:rounded-3xl md:p-6 md:shadow-2xl md:max-h-[80vh] md:flex md:flex-col"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
           {content}
         </div>
       </div>
@@ -2396,13 +2386,13 @@ function FavoritesSheet({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
-        {content}
-      </div>
-      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
-        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl max-h-[80vh] flex flex-col">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-end pointer-events-none md:justify-center">
+        <div
+          className="pointer-events-auto w-full max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:max-w-[500px] md:rounded-3xl md:p-6 md:shadow-2xl md:max-h-[80vh] md:flex md:flex-col"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
           {content}
         </div>
       </div>
@@ -2555,13 +2545,20 @@ function MealsAndMoreSheet({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
-        {content}
-      </div>
-      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
-        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl">
+      {/*
+        Single content render — previously content was placed in two sibling divs
+        (one md:hidden mobile sheet, one hidden md:flex desktop card), which caused
+        React hydration error #418 because the same JSX element object appeared in
+        two positions in the tree. Now we use one unified container that adapts via
+        Tailwind responsive classes, so {content} is rendered exactly once.
+      */}
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-end pointer-events-none md:justify-center">
+        <div
+          className="pointer-events-auto w-full max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:max-w-[500px] md:rounded-3xl md:p-6 md:shadow-2xl"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
           {content}
         </div>
       </div>
@@ -2751,13 +2748,13 @@ function CopyFromSheet({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:hidden"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700" />
-        {content}
-      </div>
-      <div className="fixed inset-0 z-50 hidden items-center justify-center md:flex">
-        <div className="w-full max-w-[500px] rounded-3xl bg-slate-900 p-6 ring-1 ring-slate-700 shadow-2xl">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-end pointer-events-none md:justify-center">
+        <div
+          className="pointer-events-auto w-full max-w-md rounded-t-3xl bg-slate-900 px-4 pt-4 ring-1 ring-slate-700 md:max-w-[500px] md:rounded-3xl md:p-6 md:shadow-2xl"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-700 md:hidden" />
           {content}
         </div>
       </div>
