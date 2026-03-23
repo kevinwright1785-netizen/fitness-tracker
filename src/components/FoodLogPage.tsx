@@ -209,20 +209,22 @@ function EditFoodModal({
   // Derive per-1-serving base values so the stepper always scales correctly.
   // If serving_qty was saved we can back-calculate; otherwise treat stored values as 1×.
   const savedQty = entry.serving_qty && entry.serving_qty > 0 ? entry.serving_qty : 1;
+  // entry.calories is now stored per-serving; base is the same as entry.calories
   const base = useRef({
-    calories: entry.calories / savedQty,
-    protein:  (entry.protein ?? 0) / savedQty,
-    carbs:    (entry.carbs   ?? 0) / savedQty,
-    fat:      (entry.fat     ?? 0) / savedQty,
+    calories: entry.calories,
+    protein:  entry.protein ?? 0,
+    carbs:    entry.carbs   ?? 0,
+    fat:      entry.fat     ?? 0,
   });
 
   const [name,     setName]     = useState(entry.food_name);
   const [qty,      setQty]      = useState(savedQty);
   const [rawQty,   setRawQty]   = useState(String(savedQty));
-  const [calories, setCalories] = useState(String(entry.calories));
-  const [protein,  setProtein]  = useState(entry.protein  != null ? String(entry.protein)  : "");
-  const [carbs,    setCarbs]    = useState(entry.carbs    != null ? String(entry.carbs)    : "");
-  const [fat,      setFat]      = useState(entry.fat      != null ? String(entry.fat)      : "");
+  // Display total calories (per-serving * qty) so the input matches what user sees
+  const [calories, setCalories] = useState(String(Math.round(entry.calories * savedQty)));
+  const [protein,  setProtein]  = useState(entry.protein  != null ? String(+(entry.protein  * savedQty).toFixed(1)) : "");
+  const [carbs,    setCarbs]    = useState(entry.carbs    != null ? String(+(entry.carbs    * savedQty).toFixed(1)) : "");
+  const [fat,      setFat]      = useState(entry.fat      != null ? String(+(entry.fat      * savedQty).toFixed(1)) : "");
   const [saving,   setSaving]   = useState(false);
   const [localFav, setLocalFav] = useState(isFavorited);
   const [favToast, setFavToast] = useState<string | null>(null);
@@ -251,10 +253,10 @@ function EditFoodModal({
     setSaving(true);
     await onSave(entry.id, {
       food_name:   name.trim() || entry.food_name,
-      calories:    Math.round(Number(calories) || 0),
-      protein:     protein ? Number(protein) : null,
-      carbs:       carbs   ? Number(carbs)   : null,
-      fat:         fat     ? Number(fat)     : null,
+      calories:    Math.round((Number(calories) || 0) / qty),
+      protein:     protein ? +(Number(protein) / qty).toFixed(1) : null,
+      carbs:       carbs   ? +(Number(carbs)   / qty).toFixed(1) : null,
+      fat:         fat     ? +(Number(fat)     / qty).toFixed(1) : null,
       serving_qty: qty,
     });
     setSaving(false);
@@ -446,7 +448,7 @@ function FoodItem({
         }}
       >
         <span className="flex-1 truncate pr-3 text-sm text-slate-100">{entry.food_name}</span>
-        <span className="shrink-0 text-sm font-semibold text-white">{entry.calories} cal</span>
+        <span className="shrink-0 text-sm font-semibold text-white">{Math.round(entry.calories * (entry.serving_qty ?? 1))} cal</span>
 
         {/* Desktop: trash button — always visible on hover, hidden on mobile */}
         <button
@@ -492,10 +494,10 @@ function MealSection({
   onDelete: (id: string) => void;
   onEdit: (entry: FoodEntry) => void;
 }) {
-  const cal   = entries.reduce((s, e) => s + e.calories, 0);
-  const prot  = entries.reduce((s, e) => s + (e.protein ?? 0), 0);
-  const carbs = entries.reduce((s, e) => s + (e.carbs ?? 0), 0);
-  const fat   = entries.reduce((s, e) => s + (e.fat ?? 0), 0);
+  const cal   = entries.reduce((s, e) => s + e.calories * (e.serving_qty ?? 1), 0);
+  const prot  = entries.reduce((s, e) => s + (e.protein ?? 0) * (e.serving_qty ?? 1), 0);
+  const carbs = entries.reduce((s, e) => s + (e.carbs ?? 0) * (e.serving_qty ?? 1), 0);
+  const fat   = entries.reduce((s, e) => s + (e.fat ?? 0) * (e.serving_qty ?? 1), 0);
 
   return (
     <div className="overflow-hidden rounded-2xl bg-slate-900 ring-1 ring-slate-800">
@@ -827,12 +829,6 @@ function USDASearch({
       if (!seen.has(key)) { seen.add(key); unique.push(row); }
     }
 
-    console.log("[searchRecent] raw rows before normalization:");
-    for (const row of unique) {
-      const qty = (row.serving_qty && row.serving_qty > 1) ? row.serving_qty : 1;
-      console.log(`  "${row.food_name}" | stored calories: ${row.calories} | serving_qty: ${row.serving_qty} | per-serving: ${Math.round(row.calories / qty)}`);
-    }
-
     return unique
       .map(row => {
         const nameLower = row.food_name.toLowerCase();
@@ -841,21 +837,17 @@ function USDASearch({
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-      .map(({ row }): SearchFood => {
-        // Normalize to per-single-serving so the user starts at qty=1
-        const qty = (row.serving_qty && row.serving_qty > 1) ? row.serving_qty : 1;
-        return {
-          id:           `recent-${row.food_name}`,
-          name:         row.food_name,
-          brand:        "",
-          servingLabel: "Per serving",
-          cal:          Math.round(row.calories / qty),
-          protein:      row.protein != null ? +(row.protein / qty).toFixed(1) : 0,
-          carbs:        row.carbs   != null ? +(row.carbs   / qty).toFixed(1) : 0,
-          fat:          row.fat     != null ? +(row.fat     / qty).toFixed(1) : 0,
-          source:       "OFF",
-        };
-      });
+      .map(({ row }): SearchFood => ({
+        id:           `recent-${row.food_name}`,
+        name:         row.food_name,
+        brand:        "",
+        servingLabel: "Per serving",
+        cal:          row.calories,
+        protein:      row.protein ?? 0,
+        carbs:        row.carbs   ?? 0,
+        fat:          row.fat     ?? 0,
+        source:       "OFF",
+      }));
   }
 
   async function doSearch(q: string) {
@@ -894,7 +886,7 @@ function USDASearch({
     if (!selected) return;
     setSaving(true);
     const name = selected.brand ? `${selected.name} (${selected.brand})` : selected.name;
-    await onSave({ food_name: name, calories: cal, protein, carbs, fat, serving_qty: qty });
+    await onSave({ food_name: name, calories: baseRef.current.cal, protein: baseRef.current.protein, carbs: baseRef.current.carbs, fat: baseRef.current.fat, serving_qty: qty });
     setSaving(false);
   }
 
@@ -1301,12 +1293,13 @@ function BarcodeScanner({
 
   async function confirmFood() {
     setSaving(true);
+    const b = baseRef.current;
     await onSave({
       food_name:   name.trim() || "Unknown product",
-      calories:    Math.round(Number(cal)  || 0),
-      protein:     prot  ? +Number(prot).toFixed(1)  : null,
-      carbs:       carbs ? +Number(carbs).toFixed(1) : null,
-      fat:         fat   ? +Number(fat).toFixed(1)   : null,
+      calories:    b.cal,
+      protein:     b.prot  > 0 ? +b.prot.toFixed(1)  : null,
+      carbs:       b.carbs > 0 ? +b.carbs.toFixed(1) : null,
+      fat:         b.fat   > 0 ? +b.fat.toFixed(1)   : null,
       serving_qty: servings,
     });
     setSaving(false);
@@ -1556,10 +1549,10 @@ function SavedMealsView({
     setSaving(true);
     await onSave({
       food_name:   selected.name,
-      calories:    Math.round(selected.calories * qty),
-      protein:     selected.protein != null ? +(selected.protein * qty).toFixed(1) : null,
-      carbs:       selected.carbs   != null ? +(selected.carbs   * qty).toFixed(1) : null,
-      fat:         selected.fat     != null ? +(selected.fat     * qty).toFixed(1) : null,
+      calories:    selected.calories,
+      protein:     selected.protein ?? null,
+      carbs:       selected.carbs   ?? null,
+      fat:         selected.fat     ?? null,
       serving_qty: qty,
     });
     setSaving(false);
@@ -1782,10 +1775,10 @@ function AddFoodSheet({
 // ─── Daily Totals ─────────────────────────────────────────────────────────────
 
 function DailyTotals({ entries, isToday }: { entries: FoodEntry[]; isToday: boolean }) {
-  const cal   = entries.reduce((s, e) => s + e.calories, 0);
-  const prot  = entries.reduce((s, e) => s + (e.protein  ?? 0), 0);
-  const carbs = entries.reduce((s, e) => s + (e.carbs    ?? 0), 0);
-  const fat   = entries.reduce((s, e) => s + (e.fat      ?? 0), 0);
+  const cal   = entries.reduce((s, e) => s + e.calories * (e.serving_qty ?? 1), 0);
+  const prot  = entries.reduce((s, e) => s + (e.protein  ?? 0) * (e.serving_qty ?? 1), 0);
+  const carbs = entries.reduce((s, e) => s + (e.carbs    ?? 0) * (e.serving_qty ?? 1), 0);
+  const fat   = entries.reduce((s, e) => s + (e.fat      ?? 0) * (e.serving_qty ?? 1), 0);
 
   return (
     <div className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800">
@@ -1854,10 +1847,10 @@ function FavoritesPickerView({
     setSaving(true);
     await onSave({
       food_name:   selected.food_name,
-      calories:    Math.round(selected.calories * qty),
-      protein:     selected.protein != null ? +(selected.protein * qty).toFixed(1) : null,
-      carbs:       selected.carbs   != null ? +(selected.carbs   * qty).toFixed(1) : null,
-      fat:         selected.fat     != null ? +(selected.fat     * qty).toFixed(1) : null,
+      calories:    selected.calories,
+      protein:     selected.protein ?? null,
+      carbs:       selected.carbs   ?? null,
+      fat:         selected.fat     ?? null,
       serving_qty: qty,
     });
     setSaving(false);
@@ -2049,10 +2042,10 @@ function MealBuilderSheet({
     setIngredients(prev => prev.filter(i => i.localId !== localId));
   }
 
-  const totalCal   = ingredients.reduce((s, i) => s + i.calories,        0);
-  const totalProt  = ingredients.reduce((s, i) => s + (i.protein  ?? 0), 0);
-  const totalCarbs = ingredients.reduce((s, i) => s + (i.carbs    ?? 0), 0);
-  const totalFat   = ingredients.reduce((s, i) => s + (i.fat      ?? 0), 0);
+  const totalCal   = ingredients.reduce((s, i) => s + i.calories        * (i.serving_qty ?? 1), 0);
+  const totalProt  = ingredients.reduce((s, i) => s + (i.protein  ?? 0) * (i.serving_qty ?? 1), 0);
+  const totalCarbs = ingredients.reduce((s, i) => s + (i.carbs    ?? 0) * (i.serving_qty ?? 1), 0);
+  const totalFat   = ingredients.reduce((s, i) => s + (i.fat      ?? 0) * (i.serving_qty ?? 1), 0);
 
   async function handleSave() {
     setSaveError(null);
@@ -2313,10 +2306,10 @@ function FavoritesSheet({
       user_id:     user.id,
       meal_type:   meal.type,
       food_name:   selected.food_name,
-      calories:    Math.round(selected.calories * qty),
-      protein:     selected.protein != null ? +(selected.protein * qty).toFixed(1) : null,
-      carbs:       selected.carbs   != null ? +(selected.carbs   * qty).toFixed(1) : null,
-      fat:         selected.fat     != null ? +(selected.fat     * qty).toFixed(1) : null,
+      calories:    selected.calories,
+      protein:     selected.protein ?? null,
+      carbs:       selected.carbs   ?? null,
+      fat:         selected.fat     ?? null,
       serving_qty: qty,
       logged_at:   new Date().toISOString(),
     });
