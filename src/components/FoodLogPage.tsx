@@ -837,7 +837,7 @@ function USDASearch({
       .slice(0, 5)
       .map(({ row }): SearchFood => {
         // Normalize to per-single-serving so the user starts at qty=1
-        const qty = (row.serving_qty && row.serving_qty > 0) ? row.serving_qty : 1;
+        const qty = (row.serving_qty && row.serving_qty > 1) ? row.serving_qty : 1;
         return {
           id:           `recent-${row.food_name}`,
           name:         row.food_name,
