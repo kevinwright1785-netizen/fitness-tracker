@@ -2069,15 +2069,24 @@ function MealBuilderSheet({
 
     setSaving(true);
     const payload = {
-      user_id:  authUser.id,
-      name:     mealName.trim(),
-      calories: totalCal,
-      protein:  totalProt  > 0 ? +totalProt.toFixed(1)  : null,
-      carbs:    totalCarbs > 0 ? +totalCarbs.toFixed(1) : null,
-      fat:      totalFat   > 0 ? +totalFat.toFixed(1)   : null,
+      user_id:     authUser.id,
+      name:        mealName.trim(),
+      calories:    totalCal,
+      protein:     totalProt  > 0 ? +totalProt.toFixed(1)  : null,
+      carbs:       totalCarbs > 0 ? +totalCarbs.toFixed(1) : null,
+      fat:         totalFat   > 0 ? +totalFat.toFixed(1)   : null,
+      ingredients: ingredients.map(i => ({
+        food_name:   i.food_name,
+        calories:    i.calories,
+        protein:     i.protein,
+        carbs:       i.carbs,
+        fat:         i.fat,
+        serving_qty: i.serving_qty,
+      })),
     };
 
     console.log("[MealBuilder] Saving payload:", JSON.stringify(payload, null, 2));
+    console.log("[MealBuilder] ingredients count:", payload.ingredients.length);
 
     const { data, error } = await supabase.from("saved_meals").insert(payload).select();
 
