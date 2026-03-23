@@ -827,12 +827,6 @@ function USDASearch({
       if (!seen.has(key)) { seen.add(key); unique.push(row); }
     }
 
-    console.log("[searchRecent] raw rows before normalization:");
-    for (const row of unique) {
-      const qty = (row.serving_qty && row.serving_qty > 1) ? row.serving_qty : 1;
-      console.log(`  "${row.food_name}" | stored calories: ${row.calories} | serving_qty: ${row.serving_qty} | per-serving: ${Math.round(row.calories / qty)}`);
-    }
-
     return unique
       .map(row => {
         const nameLower = row.food_name.toLowerCase();
@@ -841,21 +835,17 @@ function USDASearch({
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-      .map(({ row }): SearchFood => {
-        // Normalize to per-single-serving so the user starts at qty=1
-        const qty = (row.serving_qty && row.serving_qty > 1) ? row.serving_qty : 1;
-        return {
-          id:           `recent-${row.food_name}`,
-          name:         row.food_name,
-          brand:        "",
-          servingLabel: "Per serving",
-          cal:          Math.round(row.calories / qty),
-          protein:      row.protein != null ? +(row.protein / qty).toFixed(1) : 0,
-          carbs:        row.carbs   != null ? +(row.carbs   / qty).toFixed(1) : 0,
-          fat:          row.fat     != null ? +(row.fat     / qty).toFixed(1) : 0,
-          source:       "OFF",
-        };
-      });
+      .map(({ row }): SearchFood => ({
+        id:           `recent-${row.food_name}`,
+        name:         row.food_name,
+        brand:        "",
+        servingLabel: "Per serving",
+        cal:          row.calories,
+        protein:      row.protein ?? 0,
+        carbs:        row.carbs   ?? 0,
+        fat:          row.fat     ?? 0,
+        source:       "OFF",
+      }));
   }
 
   async function doSearch(q: string) {
