@@ -20,15 +20,6 @@ type FoodEntry = {
   logged_at: string;
 };
 
-type MealIngredient = {
-  food_name: string;
-  calories: number;
-  protein: number | null;
-  carbs: number | null;
-  fat: number | null;
-  serving_qty: number | null;
-};
-
 type SavedMeal = {
   id: string;
   name: string;
@@ -36,7 +27,6 @@ type SavedMeal = {
   protein: number | null;
   carbs: number | null;
   fat: number | null;
-  ingredients?: MealIngredient[] | null;
 };
 
 type Favorite = {
@@ -650,19 +640,8 @@ function ManualEntry({
         <h3 className="text-base font-bold text-white">Manual Entry — {mealLabel}</h3>
       </div>
       <form onSubmit={submit} className="space-y-3">
-        <div className="relative">
-          <input type="text" placeholder="Food name *" value={name}
-            onChange={e => setName(e.target.value)}
-            className={`${inputCls} ${name ? "pr-9" : ""}`} autoFocus />
-          {name && (
-            <button type="button" onClick={() => setName("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          )}
-        </div>
+        <input type="text" placeholder="Food name *" value={name}
+          onChange={e => setName(e.target.value)} className={inputCls} autoFocus />
         <div className="grid grid-cols-2 gap-2">
           <input type="number" inputMode="decimal" placeholder="Calories *" value={cal}
             onChange={e => setCal(e.target.value)} className={inputCls} />
@@ -698,29 +677,35 @@ type SearchFood = {
 };
 
 async function searchOFF(query: string): Promise<SearchFood[]> {
-  // OFF must be called server-side via the proxy to avoid CORS. Never call OFF directly from the browser.
-  const proxyUrl = `/api/food-search?query=${encodeURIComponent(query)}`;
-  console.log("[OFF] calling proxy:", proxyUrl);
-  try {
-    const res = await fetch(proxyUrl);
-    console.log("[OFF] proxy response status:", res.status, res.ok);
-    if (!res.ok) {
-      console.warn("[OFF] proxy returned non-OK status:", res.status);
-      return [];
-    }
-    const data = await res.json() as { results?: SearchFood[]; error?: string };
-    console.log("[OFF] proxy returned", data.results?.length ?? 0, "results", data.error ? `error: ${data.error}` : "");
-    return (data.results ?? []).map(r => ({ ...r, source: "OFF" as const }));
-  } catch (err) {
-    console.error("[OFF] proxy fetch failed:", err);
-    return [];
-  }
+  const res = await fetch(
+    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&action=process&json=1&page_size=10&sort_by=unique_scans_n&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`
+  );
+  const data = await res.json();
+  const products: Record<string, unknown>[] = data.products ?? [];
+  return products
+    .filter(p => p.product_name)
+    .map((p): SearchFood => {
+      const n = (p.nutriments ?? {}) as Record<string, number>;
+      const servingQty = parseFloat(String(p.serving_quantity ?? "")) || 100;
+      const mult = servingQty / 100;
+      return {
+        id: `off-${String(p.code ?? p.product_name)}`,
+        name: String(p.product_name ?? ""),
+        brand: String(p.brands ?? ""),
+        servingLabel: String(p.serving_size ?? `${servingQty}g`),
+        cal: Math.round((n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0) * mult),
+        protein: +((n.proteins_100g ?? n.proteins ?? 0) * mult).toFixed(1),
+        carbs: +((n.carbohydrates_100g ?? n.carbohydrates ?? 0) * mult).toFixed(1),
+        fat: +((n.fat_100g ?? n.fat ?? 0) * mult).toFixed(1),
+        source: "OFF",
+      };
+    });
 }
 
 async function searchUSDA(query: string): Promise<SearchFood[]> {
   const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
   const res = await fetch(
-    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Branded,Foundation,Survey%20(FNDDS),SR%20Legacy&pageSize=25&api_key=${apiKey}`
+    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Branded&pageSize=25&api_key=${apiKey}`
   );
   const data = await res.json();
   const foods: USDAFood[] = data.foods ?? [];
@@ -844,21 +829,17 @@ function USDASearch({
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-      .map(({ row }): SearchFood => {
-        // Normalize to per-single-serving values so qty starts at 1
-        const servingQty = (row.serving_qty && row.serving_qty > 0) ? row.serving_qty : 1;
-        return {
-          id:           `recent-${row.food_name}`,
-          name:         row.food_name,
-          brand:        "",
-          servingLabel: "Per serving",
-          cal:          Math.round(row.calories / servingQty),
-          protein:      row.protein  != null ? +(row.protein  / servingQty).toFixed(1) : 0,
-          carbs:        row.carbs    != null ? +(row.carbs    / servingQty).toFixed(1) : 0,
-          fat:          row.fat      != null ? +(row.fat      / servingQty).toFixed(1) : 0,
-          source:       "OFF",
-        };
-      });
+      .map(({ row }): SearchFood => ({
+        id:           `recent-${row.food_name}`,
+        name:         row.food_name,
+        brand:        "",
+        servingLabel: "As previously logged",
+        cal:          row.calories,
+        protein:      row.protein  ?? 0,
+        carbs:        row.carbs    ?? 0,
+        fat:          row.fat      ?? 0,
+        source:       "OFF",
+      }));
   }
 
   async function doSearch(q: string) {
@@ -866,34 +847,23 @@ function USDASearch({
     setSearching(true);
     setResults([]);
     setRecentFoods([]);
-
-    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const allWordsMatch = (name: string) => words.every(w => name.toLowerCase().includes(w));
-
-    await Promise.all([
-      searchRecent(q).then(r => { setRecentFoods(r); }),
+    // Run recent-logs lookup and external API search in parallel
+    const [recent] = await Promise.all([
+      searchRecent(q).then(r => { setRecentFoods(r); return r; }),
       (async () => {
         try {
-          // Run both APIs in parallel every time
-          const [usdaFoods, offFoods] = await Promise.all([searchUSDA(q), searchOFF(q)]);
-
-          // Deduplicate: USDA takes priority; drop OFF entries with the same name+brand
-          const seen = new Set(usdaFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-          const uniqueOFF = offFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-
-          // Priority order:
-          // 1. All-words-match results (USDA first, then OFF)
-          // 2. Remaining USDA
-          // 3. Remaining OFF
-          const fullMatchUSDA  = usdaFoods.filter(f =>  allWordsMatch(f.name));
-          const partialUSDA    = usdaFoods.filter(f => !allWordsMatch(f.name));
-          const fullMatchOFF   = uniqueOFF.filter(f =>  allWordsMatch(f.name));
-          const partialOFF     = uniqueOFF.filter(f => !allWordsMatch(f.name));
-
-          setResults([...fullMatchUSDA, ...fullMatchOFF, ...partialUSDA, ...partialOFF]);
+          const offFoods = await searchOFF(q);
+          setResults(offFoods);
+          if (offFoods.length < 5) {
+            const usdaFoods = await searchUSDA(q);
+            const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+            if (extra.length > 0) setResults([...offFoods, ...extra]);
+          }
         } catch { /* leave whatever was already shown */ }
       })(),
     ]);
+    void recent; // used via setRecentFoods above
     setSearching(false);
   }
 
@@ -986,18 +956,7 @@ function USDASearch({
         </svg>
         <input type="search" placeholder="Search foods…" value={query}
           onChange={onQueryChange} autoFocus
-          className={`w-full rounded-2xl border border-slate-700 bg-slate-800 py-3 pl-9 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none ${query ? "pr-9" : "pr-4"}`} />
-        {query && (
-          <button type="button" onClick={() => {
-            if (debounceRef.current) clearTimeout(debounceRef.current);
-            setQuery("");
-            doSearch("");
-          }} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        )}
+          className="w-full rounded-2xl border border-slate-700 bg-slate-800 py-3 pl-9 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none" />
       </div>
       {searching && (
         <div className="flex items-center justify-center gap-2 py-1">
@@ -1533,13 +1492,12 @@ function SavedMealsView({
       "saved", { selected: null, qty: 1 }
     )
   );
-  const [meals,          setMeals]          = useState<SavedMeal[]>([]);
-  const [loading,        setLoading]        = useState(true);
-  const [selected,       setSelected]       = useState<SavedMeal | null>(_savedMealsState.selected);
-  const [qty,            setQty]            = useState(_savedMealsState.qty);
-  const [rawQty,         setRawQty]         = useState(String(_savedMealsState.qty));
-  const [saving,         setSaving]         = useState(false);
-  const [expandedMealId, setExpandedMealId] = useState<string | null>(null);
+  const [meals,    setMeals]    = useState<SavedMeal[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [selected, setSelected] = useState<SavedMeal | null>(_savedMealsState.selected);
+  const [qty,      setQty]      = useState(_savedMealsState.qty);
+  const [rawQty,   setRawQty]   = useState(String(_savedMealsState.qty));
+  const [saving,   setSaving]   = useState(false);
 
   useEffect(() => {
     function handleVisibility() {
@@ -1554,7 +1512,7 @@ function SavedMealsView({
       if (!user || !supabase) return;
       const { data } = await supabase
         .from("saved_meals")
-        .select("id, name, calories, protein, carbs, fat, ingredients")
+        .select("id, name, calories, protein, carbs, fat")
         .eq("user_id", user.id)
         .order("name");
       setMeals((data as SavedMeal[]) ?? []);
@@ -1681,43 +1639,16 @@ function SavedMealsView({
         </div>
       )}
       <div className="max-h-[45vh] space-y-1 overflow-y-auto">
-        {meals.map(meal => {
-          const isExpanded = expandedMealId === meal.id;
-          const ingredients = meal.ingredients ?? [];
-          return (
-            <div key={meal.id} className="rounded-xl bg-slate-800 overflow-hidden">
-              <div className="flex min-h-[56px] items-center px-4 py-3 gap-2">
-                <button
-                  onClick={() => setExpandedMealId(isExpanded ? null : meal.id)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
-                  aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
-                    strokeLinecap="round" strokeLinejoin="round"
-                    className={`h-4 w-4 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-                <button onClick={() => selectMeal(meal)} className="flex flex-1 items-center justify-between text-left min-w-0">
-                  <span className="flex-1 truncate text-sm font-medium text-white">{meal.name}</span>
-                  <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{meal.calories} cal</span>
-                </button>
-              </div>
-              {isExpanded && (
-                <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
-                  {ingredients.length > 0 ? ingredients.map((ing, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
-                      <span className="flex-1 truncate pr-2">{ing.food_name}{ing.serving_qty && ing.serving_qty !== 1 ? ` ×${ing.serving_qty}` : ""}</span>
-                      <span className="shrink-0 text-slate-300">{ing.calories} cal</span>
-                    </div>
-                  )) : (
-                    <p className="text-xs text-slate-500 py-0.5">No ingredient data — re-save this meal to see ingredients.</p>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {meals.map(meal => (
+          <button
+            key={meal.id}
+            onClick={() => selectMeal(meal)}
+            className="flex min-h-[56px] w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-left hover:bg-slate-700"
+          >
+            <span className="flex-1 truncate text-sm font-medium text-white">{meal.name}</span>
+            <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{meal.calories} cal</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -2138,20 +2069,12 @@ function MealBuilderSheet({
 
     setSaving(true);
     const payload = {
-      user_id:     authUser.id,
-      name:        mealName.trim(),
-      calories:    totalCal,
-      protein:     totalProt  > 0 ? +totalProt.toFixed(1)  : null,
-      carbs:       totalCarbs > 0 ? +totalCarbs.toFixed(1) : null,
-      fat:         totalFat   > 0 ? +totalFat.toFixed(1)   : null,
-      ingredients: ingredients.map(i => ({
-        food_name:   i.food_name,
-        calories:    i.calories,
-        protein:     i.protein,
-        carbs:       i.carbs,
-        fat:         i.fat,
-        serving_qty: i.serving_qty,
-      })),
+      user_id:  authUser.id,
+      name:     mealName.trim(),
+      calories: totalCal,
+      protein:  totalProt  > 0 ? +totalProt.toFixed(1)  : null,
+      carbs:    totalCarbs > 0 ? +totalCarbs.toFixed(1) : null,
+      fat:      totalFat   > 0 ? +totalFat.toFixed(1)   : null,
     };
 
     console.log("[MealBuilder] Saving payload:", JSON.stringify(payload, null, 2));
@@ -2498,12 +2421,11 @@ function MealsAndMoreSheet({
 }) {
   const { user } = useAuth();
   type View = "menu" | "saved-meals" | "favorites";
-  const [view,              setView]             = useState<View>("menu");
-  const [savedMeals,        setSavedMeals]       = useState<SavedMeal[]>([]);
-  const [favorites,         setFavorites]        = useState<Favorite[]>([]);
-  const [loadingSaved,      setLoadingSaved]     = useState(false);
-  const [loadingFavs,       setLoadingFavs]      = useState(false);
-  const [expandedMealId,    setExpandedMealId]   = useState<string | null>(null);
+  const [view,         setView]        = useState<View>("menu");
+  const [savedMeals,   setSavedMeals]  = useState<SavedMeal[]>([]);
+  const [favorites,    setFavorites]   = useState<Favorite[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+  const [loadingFavs,  setLoadingFavs]  = useState(false);
 
   async function openSavedMeals() {
     setView("saved-meals");
@@ -2511,7 +2433,7 @@ function MealsAndMoreSheet({
     setLoadingSaved(true);
     const { data } = await supabase
       .from("saved_meals")
-      .select("id, name, calories, protein, carbs, fat, ingredients")
+      .select("id, name, calories, protein, carbs, fat")
       .eq("user_id", user.id)
       .order("name");
     setSavedMeals((data as SavedMeal[]) ?? []);
@@ -2583,41 +2505,12 @@ function MealsAndMoreSheet({
           {!loadingSaved && savedMeals.length === 0 && (
             <p className="py-8 text-center text-sm text-slate-500">No saved meals yet.</p>
           )}
-          {savedMeals.map(m => {
-            const isExpanded = expandedMealId === m.id;
-            const ingredients = m.ingredients ?? [];
-            return (
-              <div key={m.id} className="rounded-xl bg-slate-800 overflow-hidden">
-                <div className="flex min-h-[52px] items-center px-4 py-3 gap-2">
-                  <button
-                    onClick={() => setExpandedMealId(isExpanded ? null : m.id)}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
-                    aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
-                      strokeLinecap="round" strokeLinejoin="round"
-                      className={`h-4 w-4 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                  <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
-                  <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
-                </div>
-                {isExpanded && (
-                  <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
-                    {ingredients.length > 0 ? ingredients.map((ing, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
-                        <span className="flex-1 truncate pr-2">{ing.food_name}{ing.serving_qty && ing.serving_qty !== 1 ? ` ×${ing.serving_qty}` : ""}</span>
-                        <span className="shrink-0 text-slate-300">{ing.calories} cal</span>
-                      </div>
-                    )) : (
-                      <p className="text-xs text-slate-500 py-0.5">No ingredient data — re-save this meal to see ingredients.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {savedMeals.map(m => (
+            <div key={m.id} className="flex min-h-[52px] items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
+              <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
+              <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
+            </div>
+          ))}
         </div>
       )}
 
