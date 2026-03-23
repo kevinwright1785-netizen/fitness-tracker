@@ -20,7 +20,7 @@ type SearchFood = {
   fat: number;
 };
 
-const OFF_TIMEOUT_MS = 3000;
+const OFF_TIMEOUT_MS = 8000;
 
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("query")?.trim();
