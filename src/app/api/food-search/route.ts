@@ -39,17 +39,23 @@ export async function GET(req: NextRequest) {
       `&sort_by=unique_scans_n` +
       `&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`;
 
+    console.log("[food-search] fetching OFF:", url);
+
     const offRes = await fetch(url, {
       signal: controller.signal,
       headers: { "User-Agent": "TrackRight/1.0 (fitness tracker app)" },
     });
 
+    console.log("[food-search] OFF response status:", offRes.status, offRes.ok);
+
     if (!offRes.ok) {
+      console.warn("[food-search] OFF non-OK, returning empty");
       return NextResponse.json({ results: [] });
     }
 
     const data = await offRes.json() as { products?: OFFProduct[] };
     const products = data.products ?? [];
+    console.log("[food-search] OFF returned", products.length, "products");
 
     const results: SearchFood[] = products
       .filter(p => p.product_name)
@@ -69,11 +75,13 @@ export async function GET(req: NextRequest) {
         };
       });
 
+    console.log("[food-search] returning", results.length, "mapped results");
     return NextResponse.json({ results });
   } catch (err) {
-    // AbortError = timed out; any other error = OFF unavailable — both return empty
-    if (err instanceof Error && err.name !== "AbortError") {
-      console.error("[food-search] OFF error:", err.message);
+    if (err instanceof Error && err.name === "AbortError") {
+      console.warn("[food-search] OFF timed out after", OFF_TIMEOUT_MS, "ms");
+    } else {
+      console.error("[food-search] OFF error:", err instanceof Error ? err.message : err);
     }
     return NextResponse.json({ results: [] });
   } finally {

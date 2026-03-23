@@ -698,29 +698,23 @@ type SearchFood = {
 };
 
 async function searchOFF(query: string): Promise<SearchFood[]> {
-  const res = await fetch(
-    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&action=process&json=1&page_size=10&sort_by=unique_scans_n&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`
-  );
-  const data = await res.json();
-  const products: Record<string, unknown>[] = data.products ?? [];
-  return products
-    .filter(p => p.product_name)
-    .map((p): SearchFood => {
-      const n = (p.nutriments ?? {}) as Record<string, number>;
-      const servingQty = parseFloat(String(p.serving_quantity ?? "")) || 100;
-      const mult = servingQty / 100;
-      return {
-        id: `off-${String(p.code ?? p.product_name)}`,
-        name: String(p.product_name ?? ""),
-        brand: String(p.brands ?? ""),
-        servingLabel: String(p.serving_size ?? `${servingQty}g`),
-        cal: Math.round((n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0) * mult),
-        protein: +((n.proteins_100g ?? n.proteins ?? 0) * mult).toFixed(1),
-        carbs: +((n.carbohydrates_100g ?? n.carbohydrates ?? 0) * mult).toFixed(1),
-        fat: +((n.fat_100g ?? n.fat ?? 0) * mult).toFixed(1),
-        source: "OFF",
-      };
-    });
+  // OFF must be called server-side via the proxy to avoid CORS. Never call OFF directly from the browser.
+  const proxyUrl = `/api/food-search?query=${encodeURIComponent(query)}`;
+  console.log("[OFF] calling proxy:", proxyUrl);
+  try {
+    const res = await fetch(proxyUrl);
+    console.log("[OFF] proxy response status:", res.status, res.ok);
+    if (!res.ok) {
+      console.warn("[OFF] proxy returned non-OK status:", res.status);
+      return [];
+    }
+    const data = await res.json() as { results?: SearchFood[]; error?: string };
+    console.log("[OFF] proxy returned", data.results?.length ?? 0, "results", data.error ? `error: ${data.error}` : "");
+    return (data.results ?? []).map(r => ({ ...r, source: "OFF" as const }));
+  } catch (err) {
+    console.error("[OFF] proxy fetch failed:", err);
+    return [];
+  }
 }
 
 async function searchUSDA(query: string): Promise<SearchFood[]> {
