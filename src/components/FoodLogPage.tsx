@@ -872,23 +872,34 @@ function USDASearch({
     setSearching(true);
     setResults([]);
     setRecentFoods([]);
-    // Run recent-logs lookup and USDA search in parallel; supplement with OFF if needed
-    const [recent] = await Promise.all([
-      searchRecent(q).then(r => { setRecentFoods(r); return r; }),
+
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const allWordsMatch = (name: string) => words.every(w => name.toLowerCase().includes(w));
+
+    await Promise.all([
+      searchRecent(q).then(r => { setRecentFoods(r); }),
       (async () => {
         try {
-          const usdaFoods = await searchUSDA(q);
-          setResults(usdaFoods);
-          if (usdaFoods.length < 5) {
-            const offFoods = await searchOFF(q);
-            const seen = new Set(usdaFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-            const extra = offFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-            if (extra.length > 0) setResults([...usdaFoods, ...extra]);
-          }
+          // Run both APIs in parallel every time
+          const [usdaFoods, offFoods] = await Promise.all([searchUSDA(q), searchOFF(q)]);
+
+          // Deduplicate: USDA takes priority; drop OFF entries with the same name+brand
+          const seen = new Set(usdaFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+          const uniqueOFF = offFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
+
+          // Priority order:
+          // 1. All-words-match results (USDA first, then OFF)
+          // 2. Remaining USDA
+          // 3. Remaining OFF
+          const fullMatchUSDA  = usdaFoods.filter(f =>  allWordsMatch(f.name));
+          const partialUSDA    = usdaFoods.filter(f => !allWordsMatch(f.name));
+          const fullMatchOFF   = uniqueOFF.filter(f =>  allWordsMatch(f.name));
+          const partialOFF     = uniqueOFF.filter(f => !allWordsMatch(f.name));
+
+          setResults([...fullMatchUSDA, ...fullMatchOFF, ...partialUSDA, ...partialOFF]);
         } catch { /* leave whatever was already shown */ }
       })(),
     ]);
-    void recent; // used via setRecentFoods above
     setSearching(false);
   }
 
@@ -1678,36 +1689,36 @@ function SavedMealsView({
       <div className="max-h-[45vh] space-y-1 overflow-y-auto">
         {meals.map(meal => {
           const isExpanded = expandedMealId === meal.id;
-          const hasIngredients = meal.ingredients && meal.ingredients.length > 0;
+          const ingredients = meal.ingredients ?? [];
           return (
             <div key={meal.id} className="rounded-xl bg-slate-800 overflow-hidden">
               <div className="flex min-h-[56px] items-center px-4 py-3 gap-2">
-                {hasIngredients && (
-                  <button
-                    onClick={() => setExpandedMealId(isExpanded ? null : meal.id)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
-                    aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
-                      strokeLinecap="round" strokeLinejoin="round"
-                      className={`h-3.5 w-3.5 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                )}
+                <button
+                  onClick={() => setExpandedMealId(isExpanded ? null : meal.id)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
+                  aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                    strokeLinecap="round" strokeLinejoin="round"
+                    className={`h-4 w-4 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
                 <button onClick={() => selectMeal(meal)} className="flex flex-1 items-center justify-between text-left min-w-0">
                   <span className="flex-1 truncate text-sm font-medium text-white">{meal.name}</span>
                   <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{meal.calories} cal</span>
                 </button>
               </div>
-              {isExpanded && hasIngredients && (
+              {isExpanded && (
                 <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
-                  {meal.ingredients!.map((ing, idx) => (
+                  {ingredients.length > 0 ? ingredients.map((ing, idx) => (
                     <div key={idx} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
                       <span className="flex-1 truncate pr-2">{ing.food_name}{ing.serving_qty && ing.serving_qty !== 1 ? ` ×${ing.serving_qty}` : ""}</span>
                       <span className="shrink-0 text-slate-300">{ing.calories} cal</span>
                     </div>
-                  ))}
+                  )) : (
+                    <p className="text-xs text-slate-500 py-0.5">No ingredient data — re-save this meal to see ingredients.</p>
+                  )}
                 </div>
               )}
             </div>
@@ -2580,34 +2591,34 @@ function MealsAndMoreSheet({
           )}
           {savedMeals.map(m => {
             const isExpanded = expandedMealId === m.id;
-            const hasIngredients = m.ingredients && m.ingredients.length > 0;
+            const ingredients = m.ingredients ?? [];
             return (
               <div key={m.id} className="rounded-xl bg-slate-800 overflow-hidden">
                 <div className="flex min-h-[52px] items-center px-4 py-3 gap-2">
-                  {hasIngredients && (
-                    <button
-                      onClick={() => setExpandedMealId(isExpanded ? null : m.id)}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
-                      aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
-                        strokeLinecap="round" strokeLinejoin="round"
-                        className={`h-3.5 w-3.5 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setExpandedMealId(isExpanded ? null : m.id)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-white"
+                    aria-label={isExpanded ? "Collapse ingredients" : "Expand ingredients"}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                      strokeLinecap="round" strokeLinejoin="round"
+                      className={`h-4 w-4 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
                   <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
                   <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
                 </div>
-                {isExpanded && hasIngredients && (
+                {isExpanded && (
                   <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
-                    {m.ingredients!.map((ing, idx) => (
+                    {ingredients.length > 0 ? ingredients.map((ing, idx) => (
                       <div key={idx} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
                         <span className="flex-1 truncate pr-2">{ing.food_name}{ing.serving_qty && ing.serving_qty !== 1 ? ` ×${ing.serving_qty}` : ""}</span>
                         <span className="shrink-0 text-slate-300">{ing.calories} cal</span>
                       </div>
-                    ))}
+                    )) : (
+                      <p className="text-xs text-slate-500 py-0.5">No ingredient data — re-save this meal to see ingredients.</p>
+                    )}
                   </div>
                 )}
               </div>
