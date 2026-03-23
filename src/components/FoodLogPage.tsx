@@ -2427,6 +2427,7 @@ function MealsAndMoreSheet({
   const [loadingSaved,   setLoadingSaved]  = useState(false);
   const [loadingFavs,    setLoadingFavs]   = useState(false);
   const [expandedMealId, setExpandedMealId] = useState<string | null>(null);
+  const [deletedToast,   setDeletedToast]  = useState<string | null>(null);
 
   async function openSavedMeals() {
     console.log("[MealsAndMore] openSavedMeals called — user:", !!user, "supabase:", !!supabase, "current view:", view);
@@ -2464,6 +2465,26 @@ function MealsAndMoreSheet({
     if (!supabase) return;
     const { error } = await supabase.from("favorites").delete().eq("id", id);
     if (!error) setFavorites(prev => prev.filter(f => f.id !== id));
+  }
+
+  async function deleteSavedMeal(id: string, name: string) {
+    if (!supabase) return;
+    // Optimistically remove from list and collapse if expanded
+    setSavedMeals(prev => prev.filter(m => m.id !== id));
+    if (expandedMealId === id) setExpandedMealId(null);
+    const { error } = await supabase.from("saved_meals").delete().eq("id", id);
+    if (error) {
+      // Reload the list to restore the item if the delete failed
+      const { data } = await supabase
+        .from("saved_meals")
+        .select("id, name, calories, protein, carbs, fat, ingredients")
+        .eq("user_id", user?.id ?? "")
+        .order("name");
+      setSavedMeals((data as SavedMeal[]) ?? []);
+    } else {
+      setDeletedToast(`"${name}" deleted`);
+      setTimeout(() => setDeletedToast(null), 3000);
+    }
   }
 
   console.log("[MealsAndMore] render — view:", view, "savedMeals:", savedMeals.length, "loadingSaved:", loadingSaved);
@@ -2519,21 +2540,37 @@ function MealsAndMoreSheet({
             const ingredients = m.ingredients ?? [];
             return (
               <div key={m.id} className="rounded-xl bg-slate-800 overflow-hidden">
-                <button
-                  onClick={() => {
-                    console.log("[MealsAndMore] chevron tapped — meal:", m.name, "isExpanded:", isExpanded, "ingredients:", ingredients.length);
-                    setExpandedMealId(isExpanded ? null : m.id);
-                  }}
-                  className="flex min-h-[52px] w-full items-center gap-2 px-4 py-3 text-left"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
-                    strokeLinecap="round" strokeLinejoin="round"
-                    className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                  <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
-                  <span className="ml-3 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
-                </button>
+                {/* Row: chevron+name+cal as one tap target, trash separate */}
+                <div className="flex min-h-[52px] items-center pr-2">
+                  <button
+                    onClick={() => {
+                      console.log("[MealsAndMore] expand tapped — meal:", m.name, "wasExpanded:", isExpanded, "ingredients:", ingredients.length);
+                      setExpandedMealId(isExpanded ? null : m.id);
+                    }}
+                    className="flex flex-1 items-center gap-2 px-4 py-3 text-left min-w-0"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                      strokeLinecap="round" strokeLinejoin="round"
+                      className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}>
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                    <span className="flex-1 truncate text-sm font-medium text-white">{m.name}</span>
+                    <span className="ml-2 shrink-0 text-sm font-bold text-emerald-400">{m.calories} cal</span>
+                  </button>
+                  <button
+                    onClick={() => deleteSavedMeal(m.id, m.name)}
+                    aria-label={`Delete ${m.name}`}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                      strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
                 {isExpanded && (
                   <div className="border-t border-slate-700 px-4 pb-3 pt-2 space-y-1">
                     {ingredients.length > 0 ? ingredients.map((ing, idx) => (
@@ -2551,6 +2588,12 @@ function MealsAndMoreSheet({
               </div>
             );
           })}
+          {/* Deleted toast */}
+          {deletedToast && (
+            <div className="mt-2 rounded-xl bg-slate-700 px-4 py-2.5 text-center text-sm text-slate-200">
+              {deletedToast}
+            </div>
+          )}
         </div>
       )}
 
