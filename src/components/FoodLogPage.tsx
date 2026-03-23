@@ -835,17 +835,21 @@ function USDASearch({
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-      .map(({ row }): SearchFood => ({
-        id:           `recent-${row.food_name}`,
-        name:         row.food_name,
-        brand:        "",
-        servingLabel: "As previously logged",
-        cal:          row.calories,
-        protein:      row.protein  ?? 0,
-        carbs:        row.carbs    ?? 0,
-        fat:          row.fat      ?? 0,
-        source:       "OFF",
-      }));
+      .map(({ row }): SearchFood => {
+        // Normalize to per-single-serving so the user starts at qty=1
+        const qty = (row.serving_qty && row.serving_qty > 0) ? row.serving_qty : 1;
+        return {
+          id:           `recent-${row.food_name}`,
+          name:         row.food_name,
+          brand:        "",
+          servingLabel: "Per serving",
+          cal:          Math.round(row.calories / qty),
+          protein:      row.protein != null ? +(row.protein / qty).toFixed(1) : 0,
+          carbs:        row.carbs   != null ? +(row.carbs   / qty).toFixed(1) : 0,
+          fat:          row.fat     != null ? +(row.fat     / qty).toFixed(1) : 0,
+          source:       "OFF",
+        };
+      });
   }
 
   async function doSearch(q: string) {
