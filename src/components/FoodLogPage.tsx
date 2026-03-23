@@ -2428,14 +2428,20 @@ function MealsAndMoreSheet({
   const [loadingFavs,  setLoadingFavs]  = useState(false);
 
   async function openSavedMeals() {
+    console.log("[MealsAndMore] openSavedMeals called — user:", !!user, "supabase:", !!supabase, "current view:", view);
     setView("saved-meals");
-    if (!user || !supabase) return;
+    console.log("[MealsAndMore] setView('saved-meals') called");
+    if (!user || !supabase) {
+      console.warn("[MealsAndMore] early return — missing user or supabase");
+      return;
+    }
     setLoadingSaved(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("saved_meals")
       .select("id, name, calories, protein, carbs, fat")
       .eq("user_id", user.id)
       .order("name");
+    console.log("[MealsAndMore] query result — rows:", data?.length ?? 0, "error:", error?.message ?? null);
     setSavedMeals((data as SavedMeal[]) ?? []);
     setLoadingSaved(false);
   }
@@ -2458,6 +2464,8 @@ function MealsAndMoreSheet({
     const { error } = await supabase.from("favorites").delete().eq("id", id);
     if (!error) setFavorites(prev => prev.filter(f => f.id !== id));
   }
+
+  console.log("[MealsAndMore] render — view:", view, "savedMeals:", savedMeals.length, "loadingSaved:", loadingSaved);
 
   const content = (
     <>
