@@ -737,6 +737,40 @@ async function searchUSDA(query: string): Promise<SearchFood[]> {
 
 // ─── Food Search ───────────────────────────────────────────────────────────────
 
+// Generic foods (Foundation + SR Legacy — no branded)
+async function searchUSDAGeneric(query: string): Promise<SearchFood[]> {
+  const apiKey = process.env.NEXT_PUBLIC_USDA_API_KEY ?? "DEMO_KEY";
+  const res = await fetch(
+    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Foundation,SR%20Legacy&pageSize=25&api_key=${apiKey}`
+  );
+  const data = await res.json();
+  const foods: USDAFood[] = data.foods ?? [];
+  return foods.map((food): SearchFood => {
+    const mult = (food.servingSize && food.servingSize > 0) ? food.servingSize / 100 : 1;
+    const label = food.householdServingFullText
+      ?? (food.servingSize ? `${food.servingSize} ${food.servingSizeUnit ?? "g"}` : "100g");
+    return {
+      id: `usda-${food.fdcId}`,
+      name: food.description,
+      brand: food.brandName ?? food.brandOwner ?? "",
+      servingLabel: label,
+      cal: Math.round(getNutrient(food, NUT_ENERGY) * mult),
+      protein: +(getNutrient(food, NUT_PROTEIN) * mult).toFixed(1),
+      carbs: +(getNutrient(food, NUT_CARBS) * mult).toFixed(1),
+      fat: +(getNutrient(food, NUT_FAT) * mult).toFixed(1),
+      source: "USDA",
+    };
+  });
+}
+
+// Brand / packaged foods via the server-side OFF proxy
+async function searchOFFProxy(query: string): Promise<SearchFood[]> {
+  const res = await fetch(`/api/food-search?query=${encodeURIComponent(query)}`);
+  if (!res.ok) return [];
+  const data = await res.json() as { results?: Omit<SearchFood, "source">[] };
+  return (data.results ?? []).map(f => ({ ...f, source: "OFF" as const }));
+}
+
 function USDASearch({
   mealLabel,
   onSave,
@@ -748,10 +782,11 @@ function USDASearch({
 }) {
   const { user } = useAuth();
   const [_savedSearch] = useState(() =>
-    readSession<{ query: string; selected: SearchFood | null; qty: number; results: SearchFood[]; recentFoods: SearchFood[] }>(
-      "search", { query: "", selected: null, qty: 1, results: [], recentFoods: [] }
+    readSession<{ query: string; selected: SearchFood | null; qty: number; results: SearchFood[]; recentFoods: SearchFood[]; searchSource: "generic" | "brand" | null }>(
+      "search", { query: "", selected: null, qty: 1, results: [], recentFoods: [], searchSource: null }
     )
   );
+  const [searchSource, setSearchSource] = useState<"generic" | "brand" | null>(_savedSearch.searchSource);
   const [query,       setQuery]       = useState(_savedSearch.query);
   const [results,     setResults]     = useState<SearchFood[]>(_savedSearch.results);
   const [recentFoods, setRecentFoods] = useState<SearchFood[]>(_savedSearch.recentFoods);
@@ -772,18 +807,18 @@ function USDASearch({
         carbs:   _savedSearch.selected.carbs,
         fat:     _savedSearch.selected.fat,
       };
-    } else if (_savedSearch.query && _savedSearch.results.length === 0) {
-      doSearch(_savedSearch.query);
+    } else if (_savedSearch.query && _savedSearch.results.length === 0 && _savedSearch.searchSource) {
+      doSearch(_savedSearch.query, _savedSearch.searchSource);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     function handleVisibility() {
-      if (document.hidden) writeSession("search", { query, selected, qty, results, recentFoods });
+      if (document.hidden) writeSession("search", { query, selected, qty, results, recentFoods, searchSource });
     }
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [query, selected, qty, results, recentFoods]);
+  }, [query, selected, qty, results, recentFoods, searchSource]);
 
   // Scaled nutrition fields
   const cal     = Math.round(baseRef.current.cal     * qty);
@@ -855,28 +890,22 @@ function USDASearch({
       }));
   }
 
-  async function doSearch(q: string) {
+  async function doSearch(q: string, source: "generic" | "brand") {
     if (!q.trim()) { setResults([]); setRecentFoods([]); return; }
     setSearching(true);
     setResults([]);
     setRecentFoods([]);
-    // Run recent-logs lookup and external API search in parallel
-    const [recent] = await Promise.all([
+    await Promise.all([
       searchRecent(q).then(r => { setRecentFoods(r); return r; }),
       (async () => {
         try {
-          const offFoods = await searchOFF(q);
-          setResults(offFoods);
-          if (offFoods.length < 5) {
-            const usdaFoods = await searchUSDA(q);
-            const seen = new Set(offFoods.map(f => `${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-            const extra = usdaFoods.filter(f => !seen.has(`${f.name.toLowerCase()}|${f.brand.toLowerCase()}`));
-            if (extra.length > 0) setResults([...offFoods, ...extra]);
-          }
+          const foods = source === "brand"
+            ? await searchOFFProxy(q)
+            : await searchUSDAGeneric(q);
+          setResults(foods);
         } catch { /* leave whatever was already shown */ }
       })(),
     ]);
-    void recent; // used via setRecentFoods above
     setSearching(false);
   }
 
@@ -884,7 +913,7 @@ function USDASearch({
     const v = e.target.value;
     setQuery(v);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(v), 500);
+    if (searchSource) debounceRef.current = setTimeout(() => doSearch(v, searchSource), 500);
   }
 
   async function confirmFood() {
@@ -893,6 +922,14 @@ function USDASearch({
     const name = selected.brand ? `${selected.name} (${selected.brand})` : selected.name;
     await onSave({ food_name: name, calories: cal, protein, carbs, fat, serving_qty: qty });
     setSaving(false);
+  }
+
+  function goBackToSourcePicker() {
+    setSearchSource(null);
+    setQuery("");
+    setResults([]);
+    setRecentFoods([]);
+    setSelected(null);
   }
 
   // Detail view
@@ -955,12 +992,37 @@ function USDASearch({
     );
   }
 
+  // Source picker view — shown before a search mode is selected
+  if (searchSource === null) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={onBack} />
+          <h3 className="text-base font-bold text-white">Search — {mealLabel}</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <button onClick={() => setSearchSource("generic")}
+            className="flex min-h-[72px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-4 text-left hover:bg-slate-700 appearance-none">
+            <span className="text-sm font-semibold text-white">Generic Food</span>
+            <span className="text-xs text-slate-400">Eggs, chicken, rice, etc.</span>
+          </button>
+          <button onClick={() => setSearchSource("brand")}
+            className="flex min-h-[72px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-4 text-left hover:bg-slate-700 appearance-none">
+            <span className="text-sm font-semibold text-white">Brand / Packaged Food</span>
+            <span className="text-xs text-slate-400">Great Value, Boar&apos;s Head, etc.</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Search results view
+  const sourceLabel = searchSource === "generic" ? "Generic Food" : "Brand / Packaged";
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
-        <BackButton onClick={onBack} />
-        <h3 className="text-base font-bold text-white">Search — {mealLabel}</h3>
+        <BackButton onClick={goBackToSourcePicker} />
+        <h3 className="text-base font-bold text-white">{sourceLabel}</h3>
       </div>
       <div className="relative">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
