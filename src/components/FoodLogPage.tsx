@@ -1282,10 +1282,6 @@ function BarcodeScanner({
     let cancelled = false;
 
     async function start() {
-      // Give iOS time to fully release the previous camera session before requesting a new one
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      if (cancelled) return;
-
       try {
         const [{ BrowserMultiFormatReader }, { BarcodeFormat }, { default: DecodeHintType }] =
           await Promise.all([
@@ -1315,7 +1311,7 @@ function BarcodeScanner({
         // no zoom on the rear camera.
         const cameraConstraints: MediaStreamConstraints = {
           video: {
-            facingMode: { ideal: "environment" },
+            facingMode: { exact: "environment" },
             zoom: 1,
             advanced: [{ zoom: 1 }],
             ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
