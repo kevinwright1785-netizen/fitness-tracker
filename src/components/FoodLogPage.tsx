@@ -1377,6 +1377,21 @@ function BarcodeScanner({
         if (videoRef.current?.srcObject instanceof MediaStream) {
           streamRef.current = videoRef.current.srcObject;
         }
+        // Explicitly reset zoom to minimum using ImageCapture API after stream starts
+        try {
+          const videoTrack = videoRef.current?.srcObject instanceof MediaStream
+            ? videoRef.current.srcObject.getVideoTracks()[0]
+            : undefined;
+          if (videoTrack) {
+            const capabilities = videoTrack.getCapabilities();
+            if ((capabilities as Record<string, unknown>).zoom) {
+              const zoomCap = (capabilities as Record<string, { min: number }>).zoom;
+              await videoTrack.applyConstraints({ advanced: [{ zoom: zoomCap.min } as MediaTrackConstraintSet] });
+            }
+          }
+        } catch (e) {
+          console.log("zoom reset failed:", e);
+        }
       } catch {
         if (!cancelled) {
           setErrMsg("Camera access denied or unavailable.");
