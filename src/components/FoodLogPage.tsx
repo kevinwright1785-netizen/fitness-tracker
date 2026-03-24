@@ -1212,6 +1212,10 @@ async function lookupBarcodeOFF(barcode: string): Promise<OFFProduct | null> {
   };
 }
 
+// Module-level counter persists across remounts (key-prop cycles) so device IDs
+// rotate sequentially rather than randomly.
+let cameraDeviceIndex = 0;
+
 function BarcodeScanner({
   mealLabel,
   onSave,
@@ -1293,16 +1297,18 @@ function BarcodeScanner({
       // Fix #1: hard-reset video element before requesting any new stream
       hardResetVideo();
 
-      // Fix #2: cooldown delay AFTER stopping previous tracks (cleanup ran before
+      // Fix #2: 2500ms cooldown after previous tracks stopped (cleanup ran before
       // this mount), giving iOS time to fully release the AVFoundation session
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 2500));
       if (cancelled) return;
 
-      // Fix #4: dummy camera open to flush any iOS cached session
+      // Fix #4: dummy camera open on EVERY open to flush iOS cached session
+      console.log("[BarcodeScanner] opening dummy stream to flush iOS cache");
       try {
         const dummy = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
         dummy.getTracks().forEach(t => t.stop());
-      } catch { /* ignore — some browsers may deny, that's fine */ }
+        console.log("[BarcodeScanner] dummy stream stopped");
+      } catch (e) { console.log("[BarcodeScanner] dummy stream failed (ok):", e); }
       await new Promise(resolve => setTimeout(resolve, 500));
       if (cancelled) return;
 
@@ -1325,8 +1331,8 @@ function BarcodeScanner({
 
         const reader = new BrowserMultiFormatReader(hints);
 
-        // Fix #5: rotate device IDs — prefer rear cameras, pick randomly to
-        // prevent iOS from returning the same cached session
+        // Fix #5: cycle device IDs sequentially (not randomly) so each open uses
+        // a different ID, preventing iOS from returning the same cached session
         const allDevices = await navigator.mediaDevices.enumerateDevices();
         const videoCameras = allDevices.filter(d => d.kind === "videoinput");
         const rearCameras  = videoCameras.filter(d =>
@@ -1334,9 +1340,14 @@ function BarcodeScanner({
           !d.label.toLowerCase().includes("user")
         );
         const candidates = rearCameras.length > 0 ? rearCameras : videoCameras;
-        const deviceId = candidates.length > 0
-          ? candidates[Math.floor(Math.random() * candidates.length)].deviceId
-          : undefined;
+        const pickedIndex = candidates.length > 0 ? cameraDeviceIndex % candidates.length : -1;
+        cameraDeviceIndex++;
+        const deviceId = pickedIndex >= 0 ? candidates[pickedIndex].deviceId : undefined;
+        console.log(
+          `[BarcodeScanner] open #${cameraDeviceIndex} — deviceId index ${pickedIndex}/${candidates.length - 1}:`,
+          deviceId ?? "none",
+          candidates[pickedIndex]?.label ?? ""
+        );
 
         if (cancelled || !videoRef.current) return;
 
