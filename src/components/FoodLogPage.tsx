@@ -1282,6 +1282,10 @@ function BarcodeScanner({
     let cancelled = false;
 
     async function start() {
+      // Give iOS time to fully release the previous camera session before requesting a new one
+      await new Promise(resolve => setTimeout(resolve, 300));
+      if (cancelled) return;
+
       try {
         const [{ BrowserMultiFormatReader }, { BarcodeFormat }, { default: DecodeHintType }] =
           await Promise.all([
@@ -1305,8 +1309,18 @@ function BarcodeScanner({
 
         if (cancelled || !videoRef.current) return;
 
-        const controls = await reader.decodeFromVideoDevice(
-          deviceId,
+        // Use decodeFromConstraints with explicit facingMode so each mount
+        // requests a distinct constraint set — prevents iOS from reusing a
+        // cached camera session from a previous open.
+        const cameraConstraints: MediaStreamConstraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+          },
+        };
+
+        const controls = await reader.decodeFromConstraints(
+          cameraConstraints,
           videoRef.current,
           async (result) => {
             if (cancelled || didScan.current) return;
@@ -1763,6 +1777,12 @@ function AddFoodSheet({
     const saved = readSession<SheetMode>("mode", "options");
     return saved !== "barcode" ? saved : "options";
   });
+  const [barcodeScanKey, setBarcodeScanKey] = useState(0);
+
+  function selectMode(m: SheetMode) {
+    if (m === "barcode") setBarcodeScanKey(k => k + 1);
+    setMode(m);
+  }
 
   useEffect(() => {
     function handleVisibility() {
@@ -1819,7 +1839,7 @@ function AddFoodSheet({
             {options.map(opt => (
               <button
                 key={opt.id}
-                onClick={() => setMode(opt.id)}
+                onClick={() => selectMode(opt.id)}
                 className="flex min-h-[88px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-4 py-3.5 text-left hover:bg-slate-700 appearance-none"
               >
                 <span className="text-2xl leading-none">{opt.icon}</span>
@@ -1831,7 +1851,7 @@ function AddFoodSheet({
         )}
         {mode === "manual"  && <ManualEntry   mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
         {mode === "search"  && <USDASearch     mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
-        {mode === "barcode" && <BarcodeScanner mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "barcode" && <BarcodeScanner key={barcodeScanKey} mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
         {mode === "saved"   && <SavedMealsView mealLabel={meal.label} onSave={handleSave} onBack={() => setMode("options")} />}
       </div>
     </>
@@ -2026,6 +2046,12 @@ function AddIngredientSheet({
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<IngredientMode>("options");
+  const [barcodeScanKey, setBarcodeScanKey] = useState(0);
+
+  function selectMode(m: IngredientMode) {
+    if (m === "barcode") setBarcodeScanKey(k => k + 1);
+    setMode(m);
+  }
 
   // Wrap onAdd so sub-components see the expected Promise<void> signature
   async function handleSave(data: LogPayload) {
@@ -2056,7 +2082,7 @@ function AddIngredientSheet({
         {mode === "options" && (
           <div className="grid grid-cols-2 gap-2">
             {options.map(opt => (
-              <button key={opt.id} onClick={() => setMode(opt.id)}
+              <button key={opt.id} onClick={() => selectMode(opt.id)}
                 className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700 appearance-none">
                 <span className="text-2xl leading-none">{opt.icon}</span>
                 <span className="mt-1 text-xs font-semibold text-white">{opt.label}</span>
@@ -2067,7 +2093,7 @@ function AddIngredientSheet({
         )}
         {mode === "manual"    && <ManualEntry        mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
         {mode === "search"    && <USDASearch          mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
-        {mode === "barcode"   && <BarcodeScanner      mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
+        {mode === "barcode"   && <BarcodeScanner key={barcodeScanKey} mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
         {mode === "favorites" && <FavoritesPickerView mealLabel="Meal" onSave={handleSave} onBack={() => setMode("options")} />}
       </div>
     </>
@@ -2105,9 +2131,15 @@ function MealBuilderSheet({
   const [mealName,         setMealName]         = useState("");
   const [ingredients,      setIngredients]      = useState<Ingredient[]>([]);
   const [ingredientMode,   setIngredientMode]   = useState<IngredientMode | null>(null);
+  const [barcodeScanKey,   setBarcodeScanKey]   = useState(0);
   const [saving,           setSaving]           = useState(false);
   const [saveError,        setSaveError]        = useState<string | null>(null);
   const [saveSuccess,      setSaveSuccess]      = useState(false);
+
+  function selectIngredientMode(m: IngredientMode) {
+    if (m === "barcode") setBarcodeScanKey(k => k + 1);
+    setIngredientMode(m);
+  }
 
   function addIngredient(data: LogPayload) {
     setIngredients(prev => [...prev, {
@@ -2348,7 +2380,7 @@ function MealBuilderSheet({
               {ingredientMode === "options" && (
                 <div className="grid grid-cols-2 gap-2">
                   {ingredientOptions.map(opt => (
-                    <button key={opt.id} onClick={() => setIngredientMode(opt.id)}
+                    <button key={opt.id} onClick={() => selectIngredientMode(opt.id)}
                       className="flex min-h-[80px] flex-col items-start gap-1 rounded-2xl bg-slate-800 px-3 py-3 text-left hover:bg-slate-700 appearance-none">
                       <span className="text-2xl leading-none">{opt.icon}</span>
                       <span className="mt-1 text-xs font-semibold text-white">{opt.label}</span>
@@ -2359,7 +2391,7 @@ function MealBuilderSheet({
               )}
               {ingredientMode === "manual"    && <ManualEntry        mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
               {ingredientMode === "search"    && <USDASearch          mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
-              {ingredientMode === "barcode"   && <BarcodeScanner      mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
+              {ingredientMode === "barcode"   && <BarcodeScanner key={barcodeScanKey} mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
               {ingredientMode === "favorites" && <FavoritesPickerView mealLabel="Meal" onSave={handleIngredientSave} onBack={() => setIngredientMode("options")} />}
             </div>
           )}
