@@ -795,8 +795,10 @@ async function searchOFFProxy(query: string): Promise<SearchFood[]> {
     const data = await res.json() as { products?: Record<string, unknown>[] };
     console.log("[searchOFF v2] products received:", data.products?.length ?? 0, data);
 
+    const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
+
     const products = data.products ?? [];
-    return products
+    const mapped = products
       .filter(p => p.product_name)
       .map((p): SearchFood => {
         const n = (p.nutriments ?? {}) as Record<string, number>;
@@ -814,6 +816,25 @@ async function searchOFFProxy(query: string): Promise<SearchFood[]> {
           source:  "OFF",
         };
       });
+
+    // Score by relevance: name matches (food type) worth 2x, brand-only matches 1x,
+    // bonus when every query word is found somewhere.
+    return mapped
+      .map(food => {
+        const nameLower  = food.name.toLowerCase();
+        const brandLower = food.brand.toLowerCase();
+        let score = 0;
+        let allMatch = true;
+        for (const word of queryWords) {
+          if      (nameLower.includes(word))  score += 2;
+          else if (brandLower.includes(word)) score += 1;
+          else allMatch = false;
+        }
+        if (allMatch && queryWords.length > 1) score += queryWords.length * 2;
+        return { food, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .map(({ food }) => food);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       console.warn("[searchOFF v2] timed out after 8s");
