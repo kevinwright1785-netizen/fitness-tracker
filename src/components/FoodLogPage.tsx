@@ -763,88 +763,12 @@ async function searchUSDAGeneric(query: string): Promise<SearchFood[]> {
   });
 }
 
-// Brand / packaged foods — client-side call to OFF v2 API
+// Brand / packaged foods via the server-side OFF proxy
 async function searchOFFProxy(query: string): Promise<SearchFood[]> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const url =
-      `https://world.openfoodfacts.org/api/v2/search` +
-      `?search_terms=${encodeURIComponent(query)}` +
-      `&page_size=10` +
-      `&fields=code,product_name,brands,nutriments,serving_size,serving_quantity` +
-      `&countries_tags=united-states`;
-
-    console.log("[searchOFF v2] fetching:", url);
-
-    // Note: browsers block custom User-Agent headers — the header below is silently
-    // ignored but included in case a future server-side path reads it.
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "TrackRight/1.0 (fitness tracker app)" },
-    });
-
-    console.log("[searchOFF v2] status:", res.status, "ok:", res.ok);
-
-    if (!res.ok) {
-      console.warn("[searchOFF v2] non-OK response, returning empty");
-      return [];
-    }
-
-    const data = await res.json() as { products?: Record<string, unknown>[] };
-    console.log("[searchOFF v2] products received:", data.products?.length ?? 0, data);
-
-    const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
-
-    const products = data.products ?? [];
-    const mapped = products
-      .filter(p => p.product_name)
-      .map((p): SearchFood => {
-        const n = (p.nutriments ?? {}) as Record<string, number>;
-        const servingQty = parseFloat(String(p.serving_quantity ?? "")) || 100;
-        const mult = servingQty / 100;
-        return {
-          id:           `off-${String(p.code ?? p.product_name)}`,
-          name:         String(p.product_name ?? ""),
-          brand:        String(p.brands ?? ""),
-          servingLabel: String(p.serving_size ?? `${servingQty}g`),
-          cal:     Math.round((n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0) * mult),
-          protein: +((n.proteins_100g      ?? n.proteins      ?? 0) * mult).toFixed(1),
-          carbs:   +((n.carbohydrates_100g ?? n.carbohydrates ?? 0) * mult).toFixed(1),
-          fat:     +((n.fat_100g           ?? n.fat           ?? 0) * mult).toFixed(1),
-          source:  "OFF",
-        };
-      });
-
-    // Score by relevance: name matches (food type) worth 2x, brand-only matches 1x,
-    // bonus when every query word is found somewhere.
-    return mapped
-      .map(food => {
-        const nameLower  = food.name.toLowerCase();
-        const brandLower = food.brand.toLowerCase();
-        let score = 0;
-        let allMatch = true;
-        for (const word of queryWords) {
-          if      (nameLower.includes(word))  score += 2;
-          else if (brandLower.includes(word)) score += 1;
-          else allMatch = false;
-        }
-        if (allMatch && queryWords.length > 1) score += queryWords.length * 2;
-        return { food, score };
-      })
-      .sort((a, b) => b.score - a.score)
-      .map(({ food }) => food);
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      console.warn("[searchOFF v2] timed out after 8s");
-    } else {
-      console.error("[searchOFF v2] error:", err instanceof Error ? err.message : err);
-    }
-    return [];
-  } finally {
-    clearTimeout(timeout);
-  }
+  const res = await fetch(`/api/food-search?query=${encodeURIComponent(query)}`);
+  if (!res.ok) return [];
+  const data = await res.json() as { results?: Omit<SearchFood, "source">[] };
+  return (data.results ?? []).map(f => ({ ...f, source: "OFF" as const }));
 }
 
 function USDASearch({
