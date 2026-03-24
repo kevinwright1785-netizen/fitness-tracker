@@ -1223,7 +1223,20 @@ function BarcodeScanner({
 }) {
   const videoRef    = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
+  const streamRef   = useRef<MediaStream | null>(null);
   const didScan     = useRef(false);
+
+  function stopCamera() {
+    controlsRef.current?.stop();
+    controlsRef.current = null;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }
 
   type ScanStatus = "scanning" | "searching" | "found" | "pick" | "notfound" | "error";
   const [status,    setStatus]    = useState<ScanStatus>("scanning");
@@ -1299,7 +1312,7 @@ function BarcodeScanner({
             if (cancelled || didScan.current) return;
             if (!result) return;
             didScan.current = true;
-            controls.stop();
+            stopCamera();
 
             const barcode = result.getText();
             setStatus("searching");
@@ -1343,6 +1356,10 @@ function BarcodeScanner({
           }
         );
         controlsRef.current = controls;
+        // Capture the MediaStream ZXing attached to the video element
+        if (videoRef.current?.srcObject instanceof MediaStream) {
+          streamRef.current = videoRef.current.srcObject;
+        }
       } catch {
         if (!cancelled) {
           setErrMsg("Camera access denied or unavailable.");
@@ -1354,7 +1371,7 @@ function BarcodeScanner({
     start();
     return () => {
       cancelled = true;
-      controlsRef.current?.stop();
+      stopCamera();
     };
   }, []);
 
