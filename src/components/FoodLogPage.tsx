@@ -1221,29 +1221,15 @@ function BarcodeScanner({
   onSave: (data: LogPayload) => Promise<void>;
   onBack: () => void;
 }) {
-  const videoRef    = useRef<HTMLVideoElement>(null);
-  const controlsRef = useRef<{ stop: () => void } | null>(null);
-  const streamRef   = useRef<MediaStream | null>(null);
-  const didScan     = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function stopCamera() {
-    controlsRef.current?.stop();
-    controlsRef.current = null;
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }
-
-  type ScanStatus = "scanning" | "searching" | "found" | "pick" | "notfound" | "error";
-  const [status,    setStatus]    = useState<ScanStatus>("scanning");
-  const [product,   setProduct]   = useState<OFFProduct | null>(null);
-  const [alternate, setAlternate] = useState<OFFProduct | null>(null);
-  const [saving,    setSaving]    = useState(false);
-  const [errMsg,    setErrMsg]    = useState("");
+  type ScanStatus = "idle" | "decoding" | "searching" | "found" | "pick" | "notfound" | "error";
+  const [status,         setStatus]         = useState<ScanStatus>("idle");
+  const [notFoundMsg,    setNotFoundMsg]     = useState("");
+  const [product,        setProduct]        = useState<OFFProduct | null>(null);
+  const [alternate,      setAlternate]      = useState<OFFProduct | null>(null);
+  const [saving,         setSaving]         = useState(false);
+  const [errMsg,         setErrMsg]         = useState("");
 
   // Editable fields — populated (and re-populated by stepper) when status === "found"
   const [name,    setName]    = useState("");
@@ -1278,140 +1264,88 @@ function BarcodeScanner({
     if (b.fat   > 0) setFat(String(+(b.fat   * q).toFixed(1)));
   }
 
-  useEffect(() => {
-    let cancelled = false;
+  async function handleImageCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so the same photo can re-trigger onChange on retake
+    e.target.value = "";
 
-    async function start() {
-      try {
-        const [{ BrowserMultiFormatReader }, { BarcodeFormat }, { default: DecodeHintType }] =
-          await Promise.all([
-            import("@zxing/browser"),
-            import("@zxing/browser"),
-            import("@zxing/library/esm/core/DecodeHintType"),
-          ]);
+    const objectUrl = URL.createObjectURL(file);
+    setStatus("decoding");
 
-        const hints = new Map();
-        hints.set(DecodeHintType, [
-          BarcodeFormat.EAN_13,
-          BarcodeFormat.EAN_8,
-          BarcodeFormat.UPC_A,
-          BarcodeFormat.UPC_E,
-          BarcodeFormat.CODE_128,
+    try {
+      const [{ BrowserMultiFormatReader }, { BarcodeFormat }, { default: DecodeHintType }] =
+        await Promise.all([
+          import("@zxing/browser"),
+          import("@zxing/browser"),
+          import("@zxing/library/esm/core/DecodeHintType"),
         ]);
 
-        const reader   = new BrowserMultiFormatReader(hints);
-        const devices  = await BrowserMultiFormatReader.listVideoInputDevices();
-        const deviceId = devices.length > 0 ? devices[devices.length - 1].deviceId : undefined;
+      const hints = new Map();
+      hints.set(DecodeHintType, [
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.CODE_128,
+      ]);
 
-        if (cancelled || !videoRef.current) return;
+      const reader = new BrowserMultiFormatReader(hints);
 
-        // Use decodeFromConstraints with explicit facingMode and zoom:1 so each
-        // mount requests a distinct constraint set — prevents iOS from reusing a
-        // cached camera session from a previous open, and explicitly requests
-        // no zoom on the rear camera.
-        const cameraConstraints: MediaStreamConstraints = {
-          video: {
-            facingMode: { exact: "environment" },
-            zoom: 1,
-            advanced: [{ zoom: 1 }],
-            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-          } as unknown as MediaTrackConstraints,
-        };
-
-        const controls = await reader.decodeFromConstraints(
-          cameraConstraints,
-          videoRef.current,
-          async (result) => {
-            if (cancelled || didScan.current) return;
-            if (!result) return;
-            didScan.current = true;
-            stopCamera();
-
-            const barcode = result.getText();
-            setStatus("searching");
-            try {
-              // Query both databases in parallel for best coverage
-              const [usdaRes, offRes] = await Promise.allSettled([
-                lookupBarcodeUSDA(barcode),
-                lookupBarcodeOFF(barcode),
-              ]);
-              if (cancelled) return;
-
-              const usda = usdaRes.status === "fulfilled" ? usdaRes.value : null;
-              const off  = offRes.status  === "fulfilled" ? offRes.value  : null;
-
-              if (!usda && !off) { setStatus("notfound"); return; }
-
-              if (usda && off) {
-                // If calorie values differ by more than 20%, let the user pick a source
-                const diff = Math.abs(usda.cal - off.cal) / Math.max(usda.cal, off.cal, 1);
-                if (diff > 0.2) {
-                  setProduct(usda);
-                  setAlternate(off);
-                  setStatus("pick");
-                  return;
-                }
-                // Values agree — prefer USDA
-                initFromProduct(usda);
-                setProduct(usda);
-              } else {
-                const chosen = usda ?? off!;
-                initFromProduct(chosen);
-                setProduct(chosen);
-              }
-              setStatus("found");
-            } catch {
-              if (!cancelled) {
-                setErrMsg("Failed to look up product. Check your connection.");
-                setStatus("error");
-              }
-            }
-          }
-        );
-        controlsRef.current = controls;
-        // Capture the MediaStream ZXing attached to the video element
-        if (videoRef.current?.srcObject instanceof MediaStream) {
-          streamRef.current = videoRef.current.srcObject;
-        }
-        // Explicitly reset zoom to minimum using ImageCapture API after stream starts
-        try {
-          const videoTrack = videoRef.current?.srcObject instanceof MediaStream
-            ? videoRef.current.srcObject.getVideoTracks()[0]
-            : undefined;
-          console.log("[zoom] videoTrack:", videoTrack?.label ?? "none");
-          if (videoTrack) {
-            console.log("[zoom] calling getCapabilities()");
-            const capabilities = videoTrack.getCapabilities();
-            const zoomCap = (capabilities as Record<string, unknown>).zoom;
-            console.log("[zoom] capabilities.zoom:", zoomCap);
-            if (zoomCap) {
-              const { min, max } = zoomCap as { min: number; max: number };
-              const current = (videoTrack.getSettings() as Record<string, unknown>).zoom;
-              console.log("[zoom] zoom range min:", min, "max:", max, "current setting:", current);
-              console.log("[zoom] calling applyConstraints({ zoom:", min, "})");
-              await videoTrack.applyConstraints({ advanced: [{ zoom: min } as MediaTrackConstraintSet] });
-              console.log("[zoom] applyConstraints resolved — zoom reset to", min);
-            } else {
-              console.log("[zoom] zoom not in capabilities — skipping reset");
-            }
-          }
-        } catch (e) {
-          console.log("[zoom] zoom reset failed:", e);
-        }
+      let barcode: string;
+      try {
+        const result = await reader.decodeFromImageUrl(objectUrl);
+        barcode = result.getText();
       } catch {
-        if (!cancelled) {
-          setErrMsg("Camera access denied or unavailable.");
-          setStatus("error");
-        }
+        // ZXing throws NotFoundException when no barcode is detected in the image
+        URL.revokeObjectURL(objectUrl);
+        setNotFoundMsg("No barcode detected. Try again.");
+        setStatus("notfound");
+        return;
       }
-    }
 
-    start();
-    return () => {
-      cancelled = true;
-      stopCamera();
-    };
-  }, []);
+      URL.revokeObjectURL(objectUrl);
+      setStatus("searching");
+
+      // Query both databases in parallel for best coverage
+      const [usdaRes, offRes] = await Promise.allSettled([
+        lookupBarcodeUSDA(barcode),
+        lookupBarcodeOFF(barcode),
+      ]);
+
+      const usda = usdaRes.status === "fulfilled" ? usdaRes.value : null;
+      const off  = offRes.status  === "fulfilled" ? offRes.value  : null;
+
+      if (!usda && !off) {
+        setNotFoundMsg("Product not found — try manual entry.");
+        setStatus("notfound");
+        return;
+      }
+
+      if (usda && off) {
+        // If calorie values differ by more than 20%, let the user pick a source
+        const diff = Math.abs(usda.cal - off.cal) / Math.max(usda.cal, off.cal, 1);
+        if (diff > 0.2) {
+          setProduct(usda);
+          setAlternate(off);
+          setStatus("pick");
+          return;
+        }
+        // Values agree — prefer USDA
+        initFromProduct(usda);
+        setProduct(usda);
+      } else {
+        const chosen = usda ?? off!;
+        initFromProduct(chosen);
+        setProduct(chosen);
+      }
+      setStatus("found");
+    } catch {
+      URL.revokeObjectURL(objectUrl);
+      setErrMsg("Failed to process image. Please try again.");
+      setStatus("error");
+    }
+  }
 
   async function confirmFood() {
     setSaving(true);
@@ -1543,7 +1477,7 @@ function BarcodeScanner({
     );
   }
 
-  // ── Scanner / status views ─────────────────────────────────────────────────
+  // ── Capture / status views ─────────────────────────────────────────────────
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -1551,53 +1485,56 @@ function BarcodeScanner({
         <h3 className="text-base font-bold text-white">Scan Barcode — {mealLabel}</h3>
       </div>
 
-      {/* Camera viewport */}
-      <div className="relative aspect-video overflow-hidden rounded-2xl bg-black">
-        <video ref={videoRef} className="h-full w-full object-cover" autoPlay muted playsInline />
+      {/* Hidden native camera input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleImageCapture}
+      />
 
-        {status === "scanning" && (
-          <>
-            {/* Corner brackets */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="relative h-36 w-64">
-                {/* TL */}<span className="absolute top-0 left-0 h-6 w-6 border-t-2 border-l-2 border-emerald-400 rounded-tl-sm" />
-                {/* TR */}<span className="absolute top-0 right-0 h-6 w-6 border-t-2 border-r-2 border-emerald-400 rounded-tr-sm" />
-                {/* BL */}<span className="absolute bottom-0 left-0 h-6 w-6 border-b-2 border-l-2 border-emerald-400 rounded-bl-sm" />
-                {/* BR */}<span className="absolute bottom-0 right-0 h-6 w-6 border-b-2 border-r-2 border-emerald-400 rounded-br-sm" />
-                {/* Animated scan line */}
-                <div className="absolute inset-x-0 h-0.5 bg-emerald-400 opacity-80 animate-scan" />
-              </div>
-            </div>
-          </>
-        )}
-
-        {status === "searching" && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/75">
-            <p className="text-sm font-semibold text-white">Looking up product…</p>
-          </div>
-        )}
-      </div>
-
-      {status === "scanning" && (
-        <p className="text-center text-sm text-slate-400">Point camera at a barcode</p>
+      {(status === "idle" || status === "notfound") && (
+        <div className="space-y-4">
+          {status === "notfound" && (
+            <p className="text-center text-sm text-amber-400">{notFoundMsg}</p>
+          )}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 text-sm font-bold text-slate-950 hover:bg-emerald-400"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+              strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+            {status === "notfound" ? "Retake Photo" : "Open Camera to Scan"}
+          </button>
+          <p className="text-center text-xs text-slate-500">
+            Take a photo of the barcode — iOS will decode it automatically
+          </p>
+        </div>
       )}
 
-      {status === "notfound" && (
-        <div className="space-y-3 text-center">
-          <p className="text-sm text-amber-400">Product not found — try manual entry</p>
-          <button onClick={onBack}
-            className="w-full rounded-2xl border border-slate-700 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-800">
-            Go Back
-          </button>
+      {(status === "decoding" || status === "searching") && (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <svg className="h-8 w-8 animate-spin text-emerald-400" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <p className="text-sm text-slate-400">
+            {status === "decoding" ? "Reading barcode…" : "Looking up product…"}
+          </p>
         </div>
       )}
 
       {status === "error" && (
         <div className="space-y-3 text-center">
           <p className="text-sm text-rose-400">{errMsg}</p>
-          <button onClick={onBack}
+          <button onClick={() => setStatus("idle")}
             className="w-full rounded-2xl bg-slate-800 py-3 text-sm font-semibold text-white hover:bg-slate-700">
-            Go Back
+            Try Again
           </button>
         </div>
       )}
