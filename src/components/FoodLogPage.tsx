@@ -1283,7 +1283,7 @@ function BarcodeScanner({
 
     async function start() {
       // Give iOS time to fully release the previous camera session before requesting a new one
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       if (cancelled) return;
 
       try {
@@ -1309,14 +1309,17 @@ function BarcodeScanner({
 
         if (cancelled || !videoRef.current) return;
 
-        // Use decodeFromConstraints with explicit facingMode so each mount
-        // requests a distinct constraint set — prevents iOS from reusing a
-        // cached camera session from a previous open.
+        // Use decodeFromConstraints with explicit facingMode and zoom:1 so each
+        // mount requests a distinct constraint set — prevents iOS from reusing a
+        // cached camera session from a previous open, and explicitly requests
+        // no zoom on the rear camera.
         const cameraConstraints: MediaStreamConstraints = {
           video: {
             facingMode: { ideal: "environment" },
+            zoom: 1,
+            advanced: [{ zoom: 1 }],
             ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-          },
+          } as unknown as MediaTrackConstraints,
         };
 
         const controls = await reader.decodeFromConstraints(
