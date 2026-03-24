@@ -1382,15 +1382,25 @@ function BarcodeScanner({
           const videoTrack = videoRef.current?.srcObject instanceof MediaStream
             ? videoRef.current.srcObject.getVideoTracks()[0]
             : undefined;
+          console.log("[zoom] videoTrack:", videoTrack?.label ?? "none");
           if (videoTrack) {
+            console.log("[zoom] calling getCapabilities()");
             const capabilities = videoTrack.getCapabilities();
-            if ((capabilities as Record<string, unknown>).zoom) {
-              const zoomCap = (capabilities as Record<string, { min: number }>).zoom;
-              await videoTrack.applyConstraints({ advanced: [{ zoom: zoomCap.min } as MediaTrackConstraintSet] });
+            const zoomCap = (capabilities as Record<string, unknown>).zoom;
+            console.log("[zoom] capabilities.zoom:", zoomCap);
+            if (zoomCap) {
+              const { min, max } = zoomCap as { min: number; max: number };
+              const current = (videoTrack.getSettings() as Record<string, unknown>).zoom;
+              console.log("[zoom] zoom range min:", min, "max:", max, "current setting:", current);
+              console.log("[zoom] calling applyConstraints({ zoom:", min, "})");
+              await videoTrack.applyConstraints({ advanced: [{ zoom: min } as MediaTrackConstraintSet] });
+              console.log("[zoom] applyConstraints resolved — zoom reset to", min);
+            } else {
+              console.log("[zoom] zoom not in capabilities — skipping reset");
             }
           }
         } catch (e) {
-          console.log("zoom reset failed:", e);
+          console.log("[zoom] zoom reset failed:", e);
         }
       } catch {
         if (!cancelled) {
